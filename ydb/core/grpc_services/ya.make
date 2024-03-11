@@ -82,6 +82,8 @@ SRCS(
     query/rpc_attach_session.cpp
     query/rpc_kqp_tx.cpp
     query/service_query.h
+
+    # etcd/api/etcdserverpb/rpc_range.cpp
 )
 
 PEERDIR(
@@ -125,6 +127,7 @@ PEERDIR(
     ydb/library/yql/public/types
     ydb/library/yql/public/issue
     ydb/library/services
+    ydb/public/api/etcd
     ydb/public/api/grpc/draft
     ydb/public/api/protos
     ydb/public/lib/fq
