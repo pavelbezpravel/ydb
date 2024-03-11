@@ -5,6 +5,7 @@ RECURSE(
     dynamic_config
     datastreams
     discovery
+    etcd
     fq
     kesus
     keyvalue
