@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <variant>
 #include <util/generic/maybe.h>
@@ -80,50 +81,49 @@ struct TDeleteResponse {
 struct TTxnRequest;
 
 using TRequestOp = std::variant<
-  std::unique_ptr<TRangeRequest>,
-  std::unique_ptr<TPutRequest>,
-  std::unique_ptr<TDeleteRequest>,
-  std::unique_ptr<TTxnRequest>
+    std::shared_ptr<TRangeRequest>,
+    std::shared_ptr<TPutRequest>,
+    std::shared_ptr<TDeleteRequest>,
+    std::shared_ptr<TTxnRequest>
 >;
 
 struct TTxnResponse;
 
 using TResponseOp = std::variant<
-  std::unique_ptr<TRangeResponse>,
-  std::unique_ptr<TPutResponse>,
-  std::unique_ptr<TDeleteResponse>,
-  std::unique_ptr<TTxnResponse>
+    std::shared_ptr<TRangeResponse>,
+    std::shared_ptr<TPutResponse>,
+    std::shared_ptr<TDeleteResponse>,
+    std::shared_ptr<TTxnResponse>
 >;
 
 struct TTxnCompareRequest {
-  enum class ECompareResult {
-    EQUAL,
-    GREATER,
-    LESS,
-    NOT_EQUAL,
-  };
-  ECompareResult result;
-  TMaybe<i64> target_create_revision;
-  TMaybe<i64> target_mod_revision;
-  TMaybe<i64> target_version;
-  TMaybe<TString> target_value;
-  TString key;
-  TString range_end;
+    enum class ECompareResult {
+        EQUAL,
+        GREATER,
+        LESS,
+        NOT_EQUAL,
+    };
+    ECompareResult Result;
+    TMaybe<i64> Target_create_revision;
+    TMaybe<i64> Target_mod_revision;
+    TMaybe<i64> Target_version;
+    TMaybe<TString> Target_value;
+    TString Key;
+    TString Range_end;
 };
 
 struct TTxnCompareResponse {
-  bool succeeded;
+    bool Succeeded;
 };
 
 struct TTxnRequest {
-  TVector<TTxnCompareRequest> compare;
-  TVector<TRequestOp> success;
-  TVector<TRequestOp> failure;
+    TVector<TTxnCompareRequest> Compare;
+    std::array<TVector<TRequestOp>, 2> Requests;
 };
 
 struct TTxnResponse {
-  bool succeeded;
-  TVector<TResponseOp> responses;
+    bool Succeeded;
+    TVector<TResponseOp> Responses;
 };
 
 } // namespace NYdb::NEtcd
