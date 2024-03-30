@@ -94,6 +94,7 @@
 #include <ydb/services/dynamic_config/grpc_service.h>
 #include <ydb/services/datastreams/grpc_service.h>
 #include <ydb/services/discovery/grpc_service.h>
+#include <ydb/services/etcd/api/etcdserverpb/kv/grpc_service.h>
 #include <ydb/services/fq/grpc_service.h>
 #include <ydb/services/fq/private_grpc.h>
 #include <ydb/services/kesus/grpc_service.h>
@@ -583,6 +584,8 @@ void TKikimrRunner::InitializeGRpc(const TKikimrRunConfig& runConfig) {
         names["query_service"] = &hasQueryService;
         TServiceCfg hasKeyValue = services.empty();
         names["keyvalue"] = &hasKeyValue;
+        TServiceCfg hasEtcdKVService = services.empty();
+        names["etcd_kv_service"] = &hasEtcdKVService;
 
         std::unordered_set<TString> enabled;
         for (const auto& name : services) {
@@ -849,6 +852,11 @@ void TKikimrRunner::InitializeGRpc(const TKikimrRunConfig& runConfig) {
             for (const auto& service : ModuleFactories->GrpcServiceFactory.Create(enabled, disabled, ActorSystem.Get(), Counters, grpcRequestProxies[0])) {
                 server.AddService(service);
             }
+        }
+
+        if (hasEtcdKVService) {
+            server.AddService(new NGRpcService::TGRpcEtcdKVService(ActorSystem.Get(), Counters,
+                grpcRequestProxies, hasEtcdKVService.IsRlAllowed(), grpcConfig.GetHandlersPerCompletionQueue()));
         }
     };
 
