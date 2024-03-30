@@ -4,6 +4,9 @@ SRCS(
     audit_log.cpp
     audit_dml_operations.cpp
     db_metadata_cache.h
+
+    etcd/api/etcdserverpb/rpc_range.cpp
+
     grpc_endpoint_publish_actor.cpp
     grpc_helper.cpp
     grpc_mon.cpp
@@ -82,8 +85,6 @@ SRCS(
     query/rpc_attach_session.cpp
     query/rpc_kqp_tx.cpp
     query/service_query.h
-
-    # etcd/api/etcdserverpb/rpc_range.cpp
 )
 
 PEERDIR(

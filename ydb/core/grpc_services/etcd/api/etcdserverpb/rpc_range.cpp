@@ -4,7 +4,9 @@
 #include <ydb/core/grpc_services/base/base.h>
 #include <ydb/core/grpc_services/rpc_request_base.h>
 
+#include <ydb/library/actors/core/actor.h>
 #include <ydb/library/actors/core/actor_bootstrapped.h>
+#include <ydb/library/actors/core/hfunc.h>
 
 #include <ydb/public/api/etcd/api/etcdserverpb/rpc.grpc.pb.h>
 
@@ -43,7 +45,7 @@ private:
         Reply(request);
     }
 
-    void Reply(const etcdserverpb::RangeRequest& request) {
+    void Reply(const ::etcdserverpb::RangeRequest& request) {
         etcdserverpb::RangeResponse response{};
         auto* kv = response.add_kvs();
         kv->set_key(request.key());
