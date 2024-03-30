@@ -30,6 +30,12 @@
 
 #include <util/stream/str.h>
 
+namespace etcdserverpb {
+
+class RangeResponse;
+
+}
+
 namespace NKikimr {
 
 namespace NSchemeCache {
@@ -456,6 +462,12 @@ class IRequestNoOpCtx : public IRequestCtx {
 };
 
 struct TCommonResponseFillerImpl {
+    static void FillImpl(etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
+        Y_UNUSED(resp);
+        Y_UNUSED(issues);
+        Y_UNUSED(status);
+    }
+
     template <typename T>
     static void FillImpl(T& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
         resp.set_status(status);
