@@ -17,7 +17,7 @@ public:
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Revision(revision)
         , Request(request) {
-        }
+    }
 
     void OnRunQuery() override {
         TStringBuilder query;
@@ -37,8 +37,9 @@ public:
             UPSERT
                 INTO kv (key, mod_revision, delete_revision)
                 SELECT key, mod_revision, $revision
-                    FROM $prev_kv;
-        )", Path.c_str());
+                    FROM $prev_kv;)",
+            Path.c_str()
+        );
 
         if (Request.PrevKv) {
             query << R"(
@@ -79,7 +80,7 @@ public:
 
             Response.PrevKvs.reserve(parser.RowsCount());
             while (parser.TryNextRow()) {
-                TKeyValue kv {
+                TKeyValue kv{
                     .key = parser.ColumnParser("key").GetString(),
                     .create_revision = parser.ColumnParser("create_revision").GetInt64(),
                     .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),
@@ -112,7 +113,7 @@ public:
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
         Send(Owner, new TEvEtcdKv::TEvDeleteResponse(status, std::move(issues), TxId, std::move(Response)));
     }
-    
+
 private:
     i64 Revision;
     TDeleteRequest Request;

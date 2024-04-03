@@ -50,8 +50,8 @@ public:
     TKvBaseActor(ui64 logComponent, TString&& sessionId, TString&& path)
         : LogComponent(logComponent)
         , SessionId(sessionId)
-        , Path(path) {
-        TxControl = NKikimr::TQueryBase::TTxControl::BeginAndCommitTx();
+        , Path(path)
+        , TxControl(NKikimr::TQueryBase::TTxControl::BeginAndCommitTx()) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
@@ -72,7 +72,7 @@ protected:
 
         this->Become(&TKvBaseActor<TDerived>::RevisionStateFunc);
 
-        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, TxControl));
+        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl));
     }
 
     STRICT_STFUNC(RevisionStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle))
@@ -83,7 +83,7 @@ protected:
 
         TxId = std::move(ev->Get()->TxId);
         Revision = ev->Get()->Revision;
-        
+
         GetDerived().RegisterKvRequest();
     }
 
@@ -116,7 +116,7 @@ protected:
 
     TString Path;
     NKikimr::TQueryBase::TTxControl TxControl;
-    
+
     i64 Revision;
 };
 

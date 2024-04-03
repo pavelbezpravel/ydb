@@ -81,14 +81,13 @@ private:
     void CreateTable() {
         Register(
             NKikimr::CreateTableCreator(
-                { Path, "revision" },
+                {Path, "revision"},
                 {
                     Col("id", NKikimr::NScheme::NTypeIds::Bool),
                     Col("revision", NKikimr::NScheme::NTypeIds::Int64),
                 },
-                { "id" },
-                static_cast<NKikimrServices::EServiceKikimr>(LogComponent)
-            )
+                {"id"},
+                static_cast<NKikimrServices::EServiceKikimr>(LogComponent))
         );
     }
 

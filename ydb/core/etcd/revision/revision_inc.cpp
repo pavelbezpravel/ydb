@@ -14,8 +14,8 @@ namespace {
 class TRevisionIncActor : public TQueryBase {
 public:
     TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl)
-    {}
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl) {
+    }
 
     void OnRunQuery() override {
         auto query = Sprintf(R"(
@@ -48,11 +48,6 @@ public:
         parser.TryNextRow();
 
         Revision = parser.ColumnParser("revision").GetInt64();
-
-        if (TxControl.Commit) {
-            CommitTransaction();
-            return;
-        }
 
         Finish();
     }

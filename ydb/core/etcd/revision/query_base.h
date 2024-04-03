@@ -10,7 +10,7 @@ public:
         : NKikimr::TQueryBase(logComponent, sessionId, database)
         , Path(path)
         , TxControl(txControl) {
-        }
+    }
 
     static inline std::pair<TTxControl, TTxControl> Split(TTxControl txControl) {
         if (txControl == TTxControl::BeginTx()) {

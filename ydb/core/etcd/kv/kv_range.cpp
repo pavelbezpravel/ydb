@@ -150,7 +150,7 @@ public:
         while (Response.Kvs.size() < Response.Count) {
             parser.TryNextRow();
 
-            TKeyValue kv {
+            TKeyValue kv{
                 .key = parser.ColumnParser("key").GetString(),
                 .create_revision = parser.ColumnParser("create_revision").GetInt64(),
                 .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),

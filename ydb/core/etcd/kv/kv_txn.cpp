@@ -153,7 +153,6 @@ public:
     }
 
 private:
-
     STRICT_STFUNC(KvDeleteStateFunc, hFunc(TEvEtcdKv::TEvDeleteResponse, Handle))
     void Handle(TEvEtcdKv::TEvDeleteResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
@@ -164,7 +163,7 @@ private:
 
         RunQuery();
     }
-    
+
     STRICT_STFUNC(KvPutStateFunc, hFunc(TEvEtcdKv::TEvPutResponse, Handle))
     void Handle(TEvEtcdKv::TEvPutResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {

@@ -16,8 +16,8 @@ public:
     TKvTableCreatorActor(ui64 logComponent, TString sessionId, TString path)
         : LogComponent(logComponent)
         , SessionId(std::move(sessionId))
-        , Path(std::move(path))
-    {}
+        , Path(std::move(path)) {
+    }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
         NActors::TActorBootstrapped<TKvTableCreatorActor>::Registered(sys, owner);
@@ -29,9 +29,7 @@ public:
     }
 
 private:
-    STRICT_STFUNC(CreateTableStateFunc,
-    hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle);
-    )
+    STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
     void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
         Finish();
@@ -51,7 +49,7 @@ private:
     void CreateTable() {
         Register(
             NKikimr::CreateTableCreator(
-                { Path, "kv" },
+                {Path, "kv"},
                 {
                     Col("key", NKikimr::NScheme::NTypeIds::String),
                     Col("mod_revision", NKikimr::NScheme::NTypeIds::Int64),
@@ -60,7 +58,7 @@ private:
                     Col("delete_revision", NKikimr::NScheme::NTypeIds::Int64),
                     Col("value", NKikimr::NScheme::NTypeIds::String),
                 },
-                { "key", "mod_revision" },
+                {"key", "mod_revision"},
                 static_cast<NKikimrServices::EServiceKikimr>(LogComponent)
             )
         );
