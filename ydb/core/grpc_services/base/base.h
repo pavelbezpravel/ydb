@@ -462,7 +462,7 @@ class IRequestNoOpCtx : public IRequestCtx {
 };
 
 struct TCommonResponseFillerImpl {
-    static void FillImpl(etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
+    static void FillImpl(::etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
         Y_UNUSED(resp);
         Y_UNUSED(issues);
         Y_UNUSED(status);
@@ -477,6 +477,10 @@ struct TCommonResponseFillerImpl {
 
 template <typename TResp, bool IsOperation = true>
 struct TCommonResponseFiller : private TCommonResponseFillerImpl {
+    static void Fill(::etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::CostInfo* costInfo, Ydb::StatusIds::StatusCode status) {
+        Y_UNUSED(costInfo);
+        FillImpl(resp, issues, status);
+    }
     static void Fill(TResp& resp, const NYql::TIssues& issues, Ydb::CostInfo* costInfo, Ydb::StatusIds::StatusCode status) {
         auto& operation = *resp.mutable_operation();
         operation.set_ready(true);

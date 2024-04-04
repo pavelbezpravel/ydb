@@ -16,7 +16,7 @@ namespace {
 
 using namespace NActors;
 
-using TEvRangeRequest = TGrpcRequestNoOperationCall<etcdserverpb::RangeRequest, etcdserverpb::RangeResponse>;
+using TEvRangeRequest = TGrpcRequestNoOperationCall<::etcdserverpb::RangeRequest, ::etcdserverpb::RangeResponse>;
 
 class TRangeRequestRPC : public TActorBootstrapped<TRangeRequestRPC> {
 public:
@@ -50,6 +50,7 @@ private:
         auto* kv = response.add_kvs();
         kv->set_key(request.key());
         kv->set_value("TODO [pavelbezpravel]: Range stub.");
+        Request_->SendSerializedResult(std::move(response.SerializeAsString()), Ydb::StatusIds::SUCCESS);
         PassAway();
     }
 

@@ -30,10 +30,6 @@ void TGRpcEtcdKVService::SetupIncomingRequests(NYdbGrpc::TLoggerPtr logger) {
     auto getCounterBlock = CreateCounterCb(Counters_, ActorSystem_);
     size_t proxyCounter = 0;
 
-    // TODO [pavelbezpravel]: WIP. Remove.
-    Y_UNUSED(logger);
-    Y_UNUSED(proxyCounter);
-
 #ifdef ADD_REQUEST
 #error ADD_REQUEST macro already defined
 #endif
