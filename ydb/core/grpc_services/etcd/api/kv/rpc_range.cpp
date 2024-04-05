@@ -1,6 +1,6 @@
 #include "service.h"
 
-#include <ydb/core/etcd/events.h>
+#include <ydb/core/etcd/kv/events.h>
 #include <ydb/core/grpc_services/base/base.h>
 #include <ydb/core/grpc_services/rpc_request_base.h>
 
@@ -36,10 +36,10 @@ public:
 
 private:
     STRICT_STFUNC(StateFunc,
-        hFunc(NKikimr::NEtcd::TEvEtcd::TEvRangeResponse, Handle);
+        hFunc(NYdb::NEtcd::TEvEtcdKV::TEvRangeResponse, Handle);
     )
 
-    void Handle(NKikimr::NEtcd::TEvEtcd::TEvRangeResponse::TPtr& ev) {
+    void Handle(NYdb::NEtcd::TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
         Y_UNUSED(ev); // TODO [pavelbezpravel]: WIP.
         const auto request = *Request_->GetProtoRequest();
         Reply(request);
