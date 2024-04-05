@@ -49,9 +49,7 @@ private:
         auto response = etcdserverpb::RangeResponse{};
 
         // TODO [pavelbezpravel]: WIP.
-        auto* kv = response.add_kvs();
-        kv->set_key(request.key());
-        kv->set_value("TODO [pavelbezpravel]: Range stub.");
+        Y_UNUSED(request);
 
         Request_->SendSerializedResult(std::move(response.SerializeAsString()), Ydb::StatusIds::SUCCESS);
 
