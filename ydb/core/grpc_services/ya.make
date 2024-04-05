@@ -5,6 +5,7 @@ SRCS(
     audit_dml_operations.cpp
     db_metadata_cache.h
 
+    etcd/api/kv/delete_range.cpp
     etcd/api/kv/rpc_put.cpp
     etcd/api/kv/rpc_range.cpp
 

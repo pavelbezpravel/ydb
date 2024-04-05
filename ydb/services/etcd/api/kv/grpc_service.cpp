@@ -52,7 +52,7 @@ void TGRpcEtcdKVService::SetupIncomingRequests(NYdbGrpc::TLoggerPtr logger) {
 
     ADD_REQUEST(Range, RangeRequest, RangeResponse, DoRange);
     ADD_REQUEST(Put, PutRequest, PutResponse, DoPut);
-    // ADD_REQUEST(DeleteRange, DeleteRangeRequest, DeleteRangeResponse, DoDeleteRange);
+    ADD_REQUEST(DeleteRange, DeleteRangeRequest, DeleteRangeResponse, DoDeleteRange);
     // ADD_REQUEST(Txn, TxnRequest, TxnResponse, DoTxn);
     // ADD_REQUEST(Compact, CompactionRequest, CompactionResponse, DoCompact);
 
