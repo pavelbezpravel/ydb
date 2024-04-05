@@ -30,12 +30,6 @@
 
 #include <util/stream/str.h>
 
-namespace etcdserverpb {
-
-class RangeResponse;
-
-}
-
 namespace NKikimr {
 
 namespace NSchemeCache {
@@ -461,8 +455,21 @@ public:
 class IRequestNoOpCtx : public IRequestCtx {
 };
 
+template <typename T>
+concept YdbProto = requires {
+    typename T::status;
+    typename T::issues;
+};
+
+template <typename T>
+concept EtcdProto = requires {
+    !YdbProto<T>;
+};
+
 struct TCommonResponseFillerImpl {
-    static void FillImpl(::etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
+    // TODO [pavelbezpravel]: it's not the best solution, but it works.
+    template <typename T> requires EtcdProto<T>
+    static void FillImpl(T& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
         Y_UNUSED(resp);
         Y_UNUSED(issues);
         Y_UNUSED(status);
@@ -477,10 +484,6 @@ struct TCommonResponseFillerImpl {
 
 template <typename TResp, bool IsOperation = true>
 struct TCommonResponseFiller : private TCommonResponseFillerImpl {
-    static void Fill(::etcdserverpb::RangeResponse& resp, const NYql::TIssues& issues, Ydb::CostInfo* costInfo, Ydb::StatusIds::StatusCode status) {
-        Y_UNUSED(costInfo);
-        FillImpl(resp, issues, status);
-    }
     static void Fill(TResp& resp, const NYql::TIssues& issues, Ydb::CostInfo* costInfo, Ydb::StatusIds::StatusCode status) {
         auto& operation = *resp.mutable_operation();
         operation.set_ready(true);
