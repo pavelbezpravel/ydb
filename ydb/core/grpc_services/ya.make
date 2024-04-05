@@ -8,6 +8,7 @@ SRCS(
     etcd/api/kv/delete_range.cpp
     etcd/api/kv/rpc_put.cpp
     etcd/api/kv/rpc_range.cpp
+    etcd/api/kv/rpc_txn.cpp
 
     grpc_endpoint_publish_actor.cpp
     grpc_helper.cpp
