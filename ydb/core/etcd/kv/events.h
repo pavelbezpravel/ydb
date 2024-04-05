@@ -14,7 +14,7 @@ struct TEvEtcdKV {
         EvCreateTableResponse = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_KV),
         EvRangeResponse,
         EvPutResponse,
-        EvDeleteResponse,
+        EvDeleteRangeResponse,
         EvTxnCompareResponse,
         EvTxnResponse,
 
@@ -60,8 +60,8 @@ struct TEvEtcdKV {
         TPutResponse Response;
     };
 
-    struct TEvDeleteResponse : public NActors::TEventLocal<TEvDeleteResponse, EvDeleteResponse> {
-        TEvDeleteResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TDeleteResponse&& response)
+    struct TEvDeleteRangeResponse : public NActors::TEventLocal<TEvDeleteRangeResponse, EvDeleteRangeResponse> {
+        TEvDeleteRangeResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TDeleteRangeResponse&& response)
             : Status(status)
             , Issues(issues)
             , TxId(std::move(txId))
@@ -72,7 +72,7 @@ struct TEvEtcdKV {
         Ydb::StatusIds::StatusCode Status;
         NYql::TIssues Issues;
         TString TxId;
-        TDeleteResponse Response;
+        TDeleteRangeResponse Response;
     };
 
     struct TEvTxnCompareResponse : public NActors::TEventLocal<TEvTxnCompareResponse, EvTxnCompareResponse> {

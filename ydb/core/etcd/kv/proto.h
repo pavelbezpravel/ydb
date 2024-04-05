@@ -70,13 +70,13 @@ struct TPutResponse {
     TVector<TKeyValue> PrevKvs;
 };
 
-struct TDeleteRequest {
+struct TDeleteRangeRequest {
     TString Key;
     TString RangeEnd;
     bool PrevKv;
 };
 
-struct TDeleteResponse {
+struct TDeleteRangeResponse {
     size_t Deleted;
     TVector<TKeyValue> PrevKvs;
 };
@@ -86,7 +86,7 @@ struct TTxnRequest;
 using TRequestOp = std::variant<
     std::shared_ptr<TRangeRequest>,
     std::shared_ptr<TPutRequest>,
-    std::shared_ptr<TDeleteRequest>,
+    std::shared_ptr<TDeleteRangeRequest>,
     std::shared_ptr<TTxnRequest>
 >;
 
@@ -95,7 +95,7 @@ struct TTxnResponse;
 using TResponseOp = std::variant<
     std::shared_ptr<TRangeResponse>,
     std::shared_ptr<TPutResponse>,
-    std::shared_ptr<TDeleteResponse>,
+    std::shared_ptr<TDeleteRangeResponse>,
     std::shared_ptr<TTxnResponse>
 >;
 
