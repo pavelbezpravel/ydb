@@ -584,8 +584,8 @@ void TKikimrRunner::InitializeGRpc(const TKikimrRunConfig& runConfig) {
         names["query_service"] = &hasQueryService;
         TServiceCfg hasKeyValue = services.empty();
         names["keyvalue"] = &hasKeyValue;
-        TServiceCfg hasEtcdKVService = services.empty();
-        names["etcd_kv_service"] = &hasEtcdKVService;
+        TServiceCfg hasEtcdService = services.empty();
+        names["etcd_service"] = &hasEtcdService;
 
         std::unordered_set<TString> enabled;
         for (const auto& name : services) {
@@ -854,9 +854,10 @@ void TKikimrRunner::InitializeGRpc(const TKikimrRunConfig& runConfig) {
             }
         }
 
-        if (hasEtcdKVService) {
+        if (hasEtcdService) {
+            // TODO [pavelbezpravel]: add pther etcd services later.
             server.AddService(new NGRpcService::TGRpcEtcdKVService(ActorSystem.Get(), Counters,
-                grpcRequestProxies, hasEtcdKVService.IsRlAllowed(), grpcConfig.GetHandlersPerCompletionQueue()));
+                grpcRequestProxies, hasEtcdService.IsRlAllowed(), grpcConfig.GetHandlersPerCompletionQueue()));
         }
     };
 

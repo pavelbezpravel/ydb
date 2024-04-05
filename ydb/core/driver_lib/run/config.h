@@ -84,7 +84,7 @@ union TBasicKikimrServicesMask {
 
         bool EnableDatabaseMetadataCache:1;
         bool EnableGraphService:1;
-        bool EnableEtcdKVService:1; // TODO [pavelbezpravel]: enable all etcd services, not only the KV?
+        bool EnableEtcdService:1;
     };
 
     struct {
