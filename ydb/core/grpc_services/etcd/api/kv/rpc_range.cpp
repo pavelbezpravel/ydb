@@ -30,7 +30,7 @@ public:
 
     void Bootstrap() {
         Become(&TRangeRequestRPC::StateFunc);
-        const auto& request = *Request_->GetProtoRequest();
+        const auto request = *Request_->GetProtoRequest();
         Reply(request);
     }
 
@@ -41,16 +41,21 @@ private:
 
     void Handle(NKikimr::NEtcd::TEvEtcd::TEvRangeResponse::TPtr& ev) {
         Y_UNUSED(ev); // TODO [pavelbezpravel]: WIP.
-        const auto& request = *Request_->GetProtoRequest();
+        const auto request = *Request_->GetProtoRequest();
         Reply(request);
     }
 
     void Reply(const ::etcdserverpb::RangeRequest& request) {
-        etcdserverpb::RangeResponse response{};
+        auto response = etcdserverpb::RangeResponse{};
+
+        // TODO [pavelbezpravel]: WIP.
         auto* kv = response.add_kvs();
         kv->set_key(request.key());
         kv->set_value("TODO [pavelbezpravel]: Range stub.");
+
         Request_->SendSerializedResult(std::move(response.SerializeAsString()), Ydb::StatusIds::SUCCESS);
+
+        // TODO [pavelbezpravel]: introduce Finish() method.
         PassAway();
     }
 
