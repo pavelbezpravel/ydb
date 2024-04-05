@@ -17,6 +17,7 @@ struct TEvEtcdKV {
         EvDeleteRangeResponse,
         EvTxnCompareResponse,
         EvTxnResponse,
+        EvCompactionResponse,
 
         EvEnd
     };
@@ -103,6 +104,21 @@ struct TEvEtcdKV {
         NYql::TIssues Issues;
         TString TxId;
         TTxnResponse Response;
+    };
+
+    struct TEvCompactionResponse : public NActors::TEventLocal<TEvCompactionResponse, EvCompactionResponse> {
+        TEvCompactionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TCompactionResponse&& response)
+            : Status(status)
+            , Issues(issues)
+            , TxId(std::move(txId))
+            , Response(response)
+        {
+        }
+
+        Ydb::StatusIds::StatusCode Status;
+        NYql::TIssues Issues;
+        TString TxId;
+        TCompactionResponse Response;
     };
 };
 

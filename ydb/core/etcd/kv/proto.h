@@ -129,4 +129,7 @@ struct TTxnResponse {
     TVector<TResponseOp> Responses;
 };
 
+// TODO [pavelbezpravel]: WIP.
+struct TCompactionResponse {};
+
 } // namespace NYdb::NEtcd
