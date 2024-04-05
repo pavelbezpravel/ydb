@@ -94,7 +94,7 @@
 #include <ydb/services/dynamic_config/grpc_service.h>
 #include <ydb/services/datastreams/grpc_service.h>
 #include <ydb/services/discovery/grpc_service.h>
-#include <ydb/services/etcd/api/etcdserverpb/kv/grpc_service.h>
+#include <ydb/services/etcd/api/kv/grpc_service.h>
 #include <ydb/services/fq/grpc_service.h>
 #include <ydb/services/fq/private_grpc.h>
 #include <ydb/services/kesus/grpc_service.h>

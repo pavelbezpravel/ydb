@@ -1,7 +1,7 @@
 LIBRARY()
 
 SRCS(
-    api/etcdserverpb/kv/grpc_service.cpp
+    api/kv/grpc_service.cpp
 )
 
 PEERDIR(

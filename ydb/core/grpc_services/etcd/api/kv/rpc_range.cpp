@@ -1,4 +1,4 @@
-#include "service_kv.h"
+#include "service.h"
 
 #include <ydb/core/etcd/events.h>
 #include <ydb/core/grpc_services/base/base.h>
