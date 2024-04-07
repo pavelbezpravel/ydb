@@ -5,11 +5,7 @@ SRCS(
     audit_dml_operations.cpp
     db_metadata_cache.h
 
-    etcd/api/kv/rpc_compact.cpp
-    etcd/api/kv/rpc_delete_range.cpp
-    etcd/api/kv/rpc_put.cpp
-    etcd/api/kv/rpc_range.cpp
-    etcd/api/kv/rpc_txn.cpp
+    etcd/api/kv/service.cpp
 
     grpc_endpoint_publish_actor.cpp
     grpc_helper.cpp
