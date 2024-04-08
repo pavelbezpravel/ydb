@@ -144,6 +144,7 @@ PEERDIR(
     ydb/services/dynamic_config
     ydb/services/datastreams
     ydb/services/discovery
+    ydb/services/etcd
     ydb/services/fq
     ydb/services/kesus
     ydb/services/keyvalue
