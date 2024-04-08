@@ -15,6 +15,7 @@ RECURSE(
     docapi
     engine
     erasure
+    etcd
     external_sources
     filestore
     fq

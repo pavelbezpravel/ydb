@@ -97,6 +97,7 @@ PEERDIR(
     ydb/core/control
     ydb/core/discovery
     ydb/core/engine
+    ydb/core/etcd
     ydb/core/formats
     ydb/core/fq/libs/events
     ydb/core/fq/libs/control_plane_proxy/events
