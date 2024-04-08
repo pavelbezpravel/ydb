@@ -62,6 +62,11 @@ NYdb::NEtcd::TPutRequest FillRequest(const etcdserverpb::PutRequest& request) {
 
 etcdserverpb::PutResponse FillResponse(const NYdb::NEtcd::TPutResponse& response) {
     auto out = etcdserverpb::PutResponse{};
+
+    if (response.PrevKVs.empty()) {
+        return {};
+    }
+
     auto PrevKV = response.PrevKVs.front();
     auto* kv = out.mutable_prev_kv();
 
