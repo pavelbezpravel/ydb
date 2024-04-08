@@ -13,7 +13,6 @@ PEERDIR(
     ydb/core/etcd/revision
     ydb/library/actors/core
     ydb/library/query_actor
-    ydb/library/table_creator
     ydb/public/sdk/cpp/client/ydb_params
     ydb/public/sdk/cpp/client/ydb_result
 )
