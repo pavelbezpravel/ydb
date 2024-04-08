@@ -123,7 +123,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKv::TEvPutResponse(status, std::move(issues), TxId, std::move(Response)));
+        Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), TxId, std::move(Response)));
     }
 
 private:

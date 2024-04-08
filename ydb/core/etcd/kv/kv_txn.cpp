@@ -149,23 +149,23 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKv::TEvTxnResponse(status, std::move(issues), TxId, std::move(Response)));
+        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), TxId, std::move(Response)));
     }
 
 private:
-    STRICT_STFUNC(KvDeleteStateFunc, hFunc(TEvEtcdKv::TEvDeleteResponse, Handle))
-    void Handle(TEvEtcdKv::TEvDeleteResponse::TPtr& ev) {
+    STRICT_STFUNC(KvDeleteStateFunc, hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle))
+    void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
         }
 
-        Response.Responses.emplace_back(std::make_shared<TDeleteResponse>(std::move(ev->Get()->Response)));
+        Response.Responses.emplace_back(std::make_shared<TDeleteRangeResponse>(std::move(ev->Get()->Response)));
 
         RunQuery();
     }
 
-    STRICT_STFUNC(KvPutStateFunc, hFunc(TEvEtcdKv::TEvPutResponse, Handle))
-    void Handle(TEvEtcdKv::TEvPutResponse::TPtr& ev) {
+    STRICT_STFUNC(KvPutStateFunc, hFunc(TEvEtcdKV::TEvPutResponse, Handle))
+    void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
         }
@@ -175,8 +175,8 @@ private:
         RunQuery();
     }
 
-    STRICT_STFUNC(KvRangeStateFunc, hFunc(TEvEtcdKv::TEvRangeResponse, Handle))
-    void Handle(TEvEtcdKv::TEvRangeResponse::TPtr& ev) {
+    STRICT_STFUNC(KvRangeStateFunc, hFunc(TEvEtcdKV::TEvRangeResponse, Handle))
+    void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
         }
@@ -186,8 +186,8 @@ private:
         RunQuery();
     }
 
-    STRICT_STFUNC(KvTxnStateFunc, hFunc(TEvEtcdKv::TEvTxnResponse, Handle))
-    void Handle(TEvEtcdKv::TEvTxnResponse::TPtr& ev) {
+    STRICT_STFUNC(KvTxnStateFunc, hFunc(TEvEtcdKV::TEvTxnResponse, Handle))
+    void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
         }
@@ -214,7 +214,7 @@ private:
         }();
         std::visit([&](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, std::shared_ptr<TDeleteRequest>>) {
+            if constexpr (std::is_same_v<T, std::shared_ptr<TDeleteRangeRequest>>) {
                 Become(&TKvTxnActor::KvDeleteStateFunc);
                 Register(CreateKvDeleteActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TPutRequest>>) {

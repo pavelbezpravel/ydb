@@ -13,7 +13,7 @@ namespace {
 
 class TKvDeleteActor : public TQueryBase {
 public:
-    TKvDeleteActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TDeleteRequest&& request)
+    TKvDeleteActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TDeleteRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Revision(revision)
         , Request(request) {
@@ -111,18 +111,18 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKv::TEvDeleteResponse(status, std::move(issues), TxId, std::move(Response)));
+        Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), TxId, std::move(Response)));
     }
 
 private:
     i64 Revision;
-    TDeleteRequest Request;
-    TDeleteResponse Response;
+    TDeleteRangeRequest Request;
+    TDeleteRangeResponse Response;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TDeleteRequest request) {
+NActors::IActor* CreateKvDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TDeleteRangeRequest request) {
     return new TKvDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
 }
 

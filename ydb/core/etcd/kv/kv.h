@@ -5,7 +5,7 @@
 
 namespace NYdb::NEtcd {
 
-NActors::IActor* CreateKvActor(ui64 logComponent, TString sessionId, TString path, TDeleteRequest deleteRequest);
+NActors::IActor* CreateKvActor(ui64 logComponent, TString sessionId, TString path, TDeleteRangeRequest deleteRequest);
 
 NActors::IActor* CreateKvActor(ui64 logComponent, TString sessionId, TString path, TPutRequest putRequest);
 

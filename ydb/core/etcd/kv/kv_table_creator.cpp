@@ -65,7 +65,7 @@ private:
     }
 
     void Finish() {
-        Send(Owner, new TEvEtcdKv::TEvCreateTableResponse());
+        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse());
         PassAway();
     }
 

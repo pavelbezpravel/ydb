@@ -26,22 +26,22 @@ struct TResponseTraits;
 
 template<>
 struct TResponseTraits<TKvDeleteActor> {
-    using type = TEvEtcdKv::TEvDeleteResponse;
+    using type = TEvEtcdKV::TEvDeleteRangeResponse;
 };
 
 template<>
 struct TResponseTraits<TKvPutActor> {
-    using type = TEvEtcdKv::TEvPutResponse;
+    using type = TEvEtcdKV::TEvPutResponse;
 };
 
 template<>
 struct TResponseTraits<TKvRangeActor> {
-    using type = TEvEtcdKv::TEvRangeResponse;
+    using type = TEvEtcdKV::TEvRangeResponse;
 };
 
 template<>
 struct TResponseTraits<TKvTxnActor> {
-    using type = TEvEtcdKv::TEvTxnResponse;
+    using type = TEvEtcdKV::TEvTxnResponse;
 };
 
 template<typename TDerived>
@@ -122,7 +122,7 @@ protected:
 
 class TKvDeleteActor : public TKvBaseActor<TKvDeleteActor> {
 public:
-    TKvDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TDeleteRequest&& request)
+    TKvDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TDeleteRangeRequest&& request)
         : TKvBaseActor<TKvDeleteActor>(logComponent, std::move(sessionId), std::move(path))
         , Request(request) {
     }
@@ -138,8 +138,8 @@ public:
     }
 
 public:
-    TDeleteRequest Request;
-    TDeleteResponse Response;
+    TDeleteRangeRequest Request;
+    TDeleteRangeResponse Response;
 };
 
 class TKvPutActor : public TKvBaseActor<TKvPutActor> {
@@ -210,7 +210,7 @@ public:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvActor(ui64 logComponent, TString sessionId, TString path, TDeleteRequest request) {
+NActors::IActor* CreateKvActor(ui64 logComponent, TString sessionId, TString path, TDeleteRangeRequest request) {
     return new TKvDeleteActor(logComponent, std::move(sessionId), std::move(path), std::move(request));
 }
 
