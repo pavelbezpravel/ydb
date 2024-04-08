@@ -4,6 +4,9 @@ SRCS(
     audit_log.cpp
     audit_dml_operations.cpp
     db_metadata_cache.h
+
+    etcd/api/kv/service.cpp
+
     grpc_endpoint_publish_actor.cpp
     grpc_helper.cpp
     grpc_mon.cpp
@@ -125,6 +128,7 @@ PEERDIR(
     ydb/library/yql/public/types
     ydb/library/yql/public/issue
     ydb/library/services
+    ydb/public/api/etcd
     ydb/public/api/grpc/draft
     ydb/public/api/protos
     ydb/public/lib/fq

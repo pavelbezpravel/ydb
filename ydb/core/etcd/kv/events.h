@@ -1,21 +1,23 @@
 #pragma once
 
 #include "proto.h"
+
 #include <ydb/core/base/events.h>
 #include <ydb/library/actors/core/event_local.h>
 #include <ydb/library/yql/public/issue/yql_issue.h>
 
 namespace NYdb::NEtcd {
 
-struct TEvEtcdKv {
+struct TEvEtcdKV {
     // Event ids
     enum EEv : ui32 {
         EvCreateTableResponse = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_KV),
         EvRangeResponse,
         EvPutResponse,
-        EvDeleteResponse,
+        EvDeleteRangeResponse,
         EvTxnCompareResponse,
         EvTxnResponse,
+        EvCompactionResponse,
 
         EvEnd
     };
@@ -59,8 +61,8 @@ struct TEvEtcdKv {
         TPutResponse Response;
     };
 
-    struct TEvDeleteResponse : public NActors::TEventLocal<TEvDeleteResponse, EvDeleteResponse> {
-        TEvDeleteResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TDeleteResponse&& response)
+    struct TEvDeleteRangeResponse : public NActors::TEventLocal<TEvDeleteRangeResponse, EvDeleteRangeResponse> {
+        TEvDeleteRangeResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TDeleteRangeResponse&& response)
             : Status(status)
             , Issues(issues)
             , TxId(std::move(txId))
@@ -71,7 +73,7 @@ struct TEvEtcdKv {
         Ydb::StatusIds::StatusCode Status;
         NYql::TIssues Issues;
         TString TxId;
-        TDeleteResponse Response;
+        TDeleteRangeResponse Response;
     };
 
     struct TEvTxnCompareResponse : public NActors::TEventLocal<TEvTxnCompareResponse, EvTxnCompareResponse> {
@@ -102,6 +104,21 @@ struct TEvEtcdKv {
         NYql::TIssues Issues;
         TString TxId;
         TTxnResponse Response;
+    };
+
+    struct TEvCompactionResponse : public NActors::TEventLocal<TEvCompactionResponse, EvCompactionResponse> {
+        TEvCompactionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TCompactionResponse&& response)
+            : Status(status)
+            , Issues(issues)
+            , TxId(std::move(txId))
+            , Response(response)
+        {
+        }
+
+        Ydb::StatusIds::StatusCode Status;
+        NYql::TIssues Issues;
+        TString TxId;
+        TCompactionResponse Response;
     };
 };
 

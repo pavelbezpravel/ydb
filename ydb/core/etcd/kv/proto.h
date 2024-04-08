@@ -3,13 +3,16 @@
 #include <array>
 #include <memory>
 #include <variant>
+
 #include <util/generic/maybe.h>
 #include <util/generic/string.h>
 #include <util/generic/vector.h>
 #include <util/system/types.h>
+
 #include <ydb/library/actors/core/event_local.h>
 #include <ydb/library/actors/core/events.h>
 #include <ydb/library/yql/public/issue/yql_issue.h>
+
 #include <ydb/public/api/protos/ydb_status_codes.pb.h>
 
 namespace NYdb::NEtcd {
@@ -67,13 +70,13 @@ struct TPutResponse {
     TVector<TKeyValue> PrevKvs;
 };
 
-struct TDeleteRequest {
+struct TDeleteRangeRequest {
     TString Key;
     TString RangeEnd;
     bool PrevKv;
 };
 
-struct TDeleteResponse {
+struct TDeleteRangeResponse {
     size_t Deleted;
     TVector<TKeyValue> PrevKvs;
 };
@@ -83,7 +86,7 @@ struct TTxnRequest;
 using TRequestOp = std::variant<
     std::shared_ptr<TRangeRequest>,
     std::shared_ptr<TPutRequest>,
-    std::shared_ptr<TDeleteRequest>,
+    std::shared_ptr<TDeleteRangeRequest>,
     std::shared_ptr<TTxnRequest>
 >;
 
@@ -92,7 +95,7 @@ struct TTxnResponse;
 using TResponseOp = std::variant<
     std::shared_ptr<TRangeResponse>,
     std::shared_ptr<TPutResponse>,
-    std::shared_ptr<TDeleteResponse>,
+    std::shared_ptr<TDeleteRangeResponse>,
     std::shared_ptr<TTxnResponse>
 >;
 
@@ -125,5 +128,8 @@ struct TTxnResponse {
     bool Succeeded;
     TVector<TResponseOp> Responses;
 };
+
+// TODO [pavelbezpravel]: WIP.
+struct TCompactionResponse {};
 
 } // namespace NYdb::NEtcd
