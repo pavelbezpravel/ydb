@@ -1,15 +1,19 @@
 #include "revision_table_creator.h"
 
+#include "events.h"
+#include "query_base.h"
+
 #include <utility>
+
 #include <ydb/core/base/path.h>
+
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
 #include <ydb/library/table_creator/table_creator.h>
+
 #include <ydb/public/lib/scheme_types/scheme_type_id.h>
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
 #include <ydb/public/sdk/cpp/client/ydb_result/result.h>
-#include "events.h"
-#include "query_base.h"
 
 namespace NYdb::NEtcd {
 

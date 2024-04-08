@@ -1,31 +1,34 @@
 #include "kv_table_creator.h"
 
+#include "events.h"
+
 #include <utility>
+
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
 #include <ydb/library/table_creator/table_creator.h>
+
 #include <ydb/public/lib/scheme_types/scheme_type_id.h>
-#include "events.h"
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKvTableCreatorActor : public NActors::TActorBootstrapped<TKvTableCreatorActor> {
+class TKVTableCreatorActor : public NActors::TActorBootstrapped<TKVTableCreatorActor> {
 public:
-    TKvTableCreatorActor(ui64 logComponent, TString sessionId, TString path)
+    TKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path)
         : LogComponent(logComponent)
         , SessionId(std::move(sessionId))
         , Path(std::move(path)) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
-        NActors::TActorBootstrapped<TKvTableCreatorActor>::Registered(sys, owner);
+        NActors::TActorBootstrapped<TKVTableCreatorActor>::Registered(sys, owner);
         Owner = owner;
     }
 
     void Bootstrap() {
-        Become(&TKvTableCreatorActor::CreateTableStateFunc);
+        Become(&TKVTableCreatorActor::CreateTableStateFunc);
     }
 
 private:
@@ -79,8 +82,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvTableCreatorActor(ui64 logComponent, TString sessionId, TString path) {
-    return new TKvTableCreatorActor(logComponent, sessionId, std::move(path));
+NActors::IActor* CreateKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path) {
+    return new TKVTableCreatorActor(logComponent, sessionId, std::move(path));
 }
 
 } // namespace NYdb::NEtcd

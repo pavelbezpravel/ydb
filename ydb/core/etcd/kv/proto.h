@@ -55,30 +55,30 @@ struct TRangeRequest {
 };
 
 struct TRangeResponse {
-    TVector<TKeyValue> Kvs;
+    TVector<TKeyValue> KVs;
     bool More;
     size_t Count;
 };
 
 struct TPutRequest {
-    TVector<std::pair<TString, TString>> Kvs;
-    bool PrevKv;
+    TVector<std::pair<TString, TString>> KVs;
+    bool PrevKV;
     bool IgnoreValue;
 };
 
 struct TPutResponse {
-    TVector<TKeyValue> PrevKvs;
+    TVector<TKeyValue> PrevKVs;
 };
 
 struct TDeleteRangeRequest {
     TString Key;
     TString RangeEnd;
-    bool PrevKv;
+    bool PrevKV;
 };
 
 struct TDeleteRangeResponse {
     size_t Deleted;
-    TVector<TKeyValue> PrevKvs;
+    TVector<TKeyValue> PrevKVs;
 };
 
 struct TTxnRequest;

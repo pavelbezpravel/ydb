@@ -1,19 +1,23 @@
 #include "kv_put.h"
 
+#include "events.h"
+#include "proto.h"
+
 #include <utility>
+
 #include <ydb/core/base/path.h>
 #include <ydb/core/etcd/revision/query_base.h>
+
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
 #include <ydb/public/sdk/cpp/client/ydb_result/result.h>
-#include "events.h"
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKvPutActor : public TQueryBase {
+class TKVPutActor : public TQueryBase {
 public:
-    TKvPutActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TPutRequest&& request)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TPutRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Revision(revision)
         , Request(request) {
@@ -63,7 +67,7 @@ public:
         Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key " || key || " is absent"))" : "new_value"
         );
 
-        if (Request.PrevKv) {
+        if (Request.PrevKV) {
             query << R"(
             SELECT * FROM $prev_kv;
             )";
@@ -75,10 +79,10 @@ public:
                 .Int64(Revision)
                 .Build();
 
-        auto& newKvParam = params.AddParam("$new_kv");
-        newKvParam.BeginList();
-        for (const auto& [key, value] : Request.Kvs) {
-            newKvParam.AddListItem()
+        auto& newKVParam = params.AddParam("$new_kv");
+        newKVParam.BeginList();
+        for (const auto& [key, value] : Request.KVs) {
+            newKVParam.AddListItem()
                 .BeginStruct()
                 .AddMember("key")
                     .String(key)
@@ -86,8 +90,8 @@ public:
                     .String(value)
                 .EndStruct();
         }
-        newKvParam.EndList();
-        newKvParam.Build();
+        newKVParam.EndList();
+        newKVParam.Build();
 
         params.Build();
 
@@ -95,7 +99,7 @@ public:
     }
 
     void OnQueryResult() override {
-        if (Request.PrevKv) {
+        if (Request.PrevKV) {
             if (ResultSets.size() != 1) {
                 Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
                 return;
@@ -103,7 +107,7 @@ public:
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
-            Response.PrevKvs.reserve(parser.RowsCount());
+            Response.PrevKVs.reserve(parser.RowsCount());
             while (parser.TryNextRow()) {
                 TKeyValue kv {
                     .key = parser.ColumnParser("key").GetString(),
@@ -112,7 +116,7 @@ public:
                     .version = parser.ColumnParser("version").GetInt64(),
                     .value = parser.ColumnParser("value").GetString(),
                 };
-                Response.PrevKvs.emplace_back(std::move(kv));
+                Response.PrevKVs.emplace_back(std::move(kv));
             }
         } else if (ResultSets.size() != 0) {
             Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
@@ -134,8 +138,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TPutRequest request) {
-    return new TKvPutActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
+NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

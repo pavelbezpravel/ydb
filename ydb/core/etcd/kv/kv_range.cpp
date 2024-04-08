@@ -1,19 +1,23 @@
 #include "kv_range.h"
 
+#include "events.h"
+#include "proto.h"
+
 #include <utility>
+
 #include <ydb/core/base/path.h>
 #include <ydb/core/etcd/revision/query_base.h>
+
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
 #include <ydb/public/sdk/cpp/client/ydb_result/result.h>
-#include "events.h"
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKvRangeActor : public TQueryBase {
+class TKVRangeActor : public TQueryBase {
 public:
-    TKvRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TRangeRequest&& request)
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Request(request) {
     }
@@ -146,8 +150,8 @@ public:
 
         Response.More = parser.RowsCount() > Request.limit;
 
-        Response.Kvs.reserve(Response.Count);
-        while (Response.Kvs.size() < Response.Count) {
+        Response.KVs.reserve(Response.Count);
+        while (Response.KVs.size() < Response.Count) {
             parser.TryNextRow();
 
             TKeyValue kv{
@@ -157,7 +161,7 @@ public:
                 .version = parser.ColumnParser("version").GetInt64(),
                 .value = parser.ColumnParser("value").GetString(),
             };
-            Response.Kvs.emplace_back(std::move(kv));
+            Response.KVs.emplace_back(std::move(kv));
         }
 
         if (TxControl.Commit) {
@@ -179,8 +183,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TRangeRequest request) {
-    return new TKvRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(request));
+NActors::IActor* CreateKVRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TRangeRequest request) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

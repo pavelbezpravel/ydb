@@ -67,7 +67,7 @@ private:
 struct TTestRuntime {
     std::shared_ptr<NActors::TTestBasicRuntime> Runtime;
     TGrabActor* Sender;
-    NActors::TActorId KvPutActor;
+    NActors::TActorId KVPutActor;
 
     TTestRuntime()
         : Runtime(std::make_shared<NActors::TTestBasicRuntime>())
@@ -84,7 +84,7 @@ struct TTestRuntime {
     }
 
     void Send(NYdb::NEtcd::TPutRequest&& putRequest) {
-        KvPutActor = Runtime->Register(CreateKvActor(NKikimrServices::EServiceKikimr::KQP_PROXY, "SessionId", "", std::move(putRequest)));
+        KVPutActor = Runtime->Register(CreateKVActor(NKikimrServices::EServiceKikimr::KQP_PROXY, "SessionId", "", std::move(putRequest)));
     }
 
     template <typename TEvent, typename TResponse>
@@ -104,19 +104,19 @@ struct TTestRuntime {
 
 } // anonymous namespace
 
-Y_UNIT_TEST_SUITE(TTestKvPut) {
+Y_UNIT_TEST_SUITE(TTestKVPut) {
     Y_UNIT_TEST(Naive) {
         TTestRuntime runtime;
 
         runtime.Send(NYdb::NEtcd::TPutRequest{
-            .Kvs = {
+            .KVs = {
                 {"key", "value"},
             },
-            .PrevKv = true,
+            .PrevKV = true,
         });
 
-        runtime.AssertEvent<NYdb::NEtcd::TEvEtcdKv::TEvPutResponse>(NYdb::NEtcd::TPutResponse{
-            .PrevKvs = {},
+        runtime.AssertEvent<NYdb::NEtcd::TEvEtcdKV::TEvPutResponse>(NYdb::NEtcd::TPutResponse{
+            .PrevKVs = {},
         });
     }
 }

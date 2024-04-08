@@ -1,19 +1,23 @@
 #include "kv_delete.h"
 
+#include "events.h"
+#include "proto.h"
+
 #include <utility>
+
 #include <ydb/core/base/path.h>
 #include <ydb/core/etcd/revision/query_base.h>
+
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
 #include <ydb/public/sdk/cpp/client/ydb_result/result.h>
-#include "events.h"
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKvDeleteActor : public TQueryBase {
+class TKVDeleteActor : public TQueryBase {
 public:
-    TKvDeleteActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TDeleteRangeRequest&& request)
+    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, TDeleteRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Revision(revision)
         , Request(request) {
@@ -41,7 +45,7 @@ public:
             Path.c_str()
         );
 
-        if (Request.PrevKv) {
+        if (Request.PrevKV) {
             query << R"(
             SELECT * FROM $prev_kv;
             )";
@@ -68,7 +72,7 @@ public:
     }
 
     void OnQueryResult() override {
-        if (Request.PrevKv) {
+        if (Request.PrevKV) {
             if (ResultSets.size() != 1) {
                 Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
                 return;
@@ -78,7 +82,7 @@ public:
 
             Response.Deleted = parser.RowsCount();
 
-            Response.PrevKvs.reserve(parser.RowsCount());
+            Response.PrevKVs.reserve(parser.RowsCount());
             while (parser.TryNextRow()) {
                 TKeyValue kv{
                     .key = parser.ColumnParser("key").GetString(),
@@ -87,7 +91,7 @@ public:
                     .version = parser.ColumnParser("version").GetInt64(),
                     .value = parser.ColumnParser("value").GetString(),
                 };
-                Response.PrevKvs.emplace_back(std::move(kv));
+                Response.PrevKVs.emplace_back(std::move(kv));
             }
         } else {
             if (ResultSets.size() != 1) {
@@ -122,8 +126,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TDeleteRangeRequest request) {
-    return new TKvDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
+NActors::IActor* CreateKVDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TDeleteRangeRequest request) {
+    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

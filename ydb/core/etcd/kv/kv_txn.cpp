@@ -1,20 +1,25 @@
 #include "kv_txn.h"
 
-#include <utility>
-#include <ydb/core/base/path.h>
-#include <ydb/core/etcd/revision/query_base.h>
+#include "events.h"
+#include "proto.h"
+
 #include "kv_delete.h"
 #include "kv_put.h"
 #include "kv_range.h"
-#include "events.h"
+
+
+#include <utility>
+
+#include <ydb/core/base/path.h>
+#include <ydb/core/etcd/revision/query_base.h>
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKvTxnActor : public TQueryBase {
+class TKVTxnActor : public TQueryBase {
 public:
-    TKvTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, i64 revision, TTxnRequest&& request)
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, i64 revision, TTxnRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
         , Revision(revision)
         , RequestIndex(-1)
@@ -153,7 +158,7 @@ public:
     }
 
 private:
-    STRICT_STFUNC(KvDeleteStateFunc, hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle))
+    STRICT_STFUNC(KVDeleteRangeStateFunc, hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle))
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
@@ -164,7 +169,7 @@ private:
         RunQuery();
     }
 
-    STRICT_STFUNC(KvPutStateFunc, hFunc(TEvEtcdKV::TEvPutResponse, Handle))
+    STRICT_STFUNC(KVPutStateFunc, hFunc(TEvEtcdKV::TEvPutResponse, Handle))
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
@@ -175,7 +180,7 @@ private:
         RunQuery();
     }
 
-    STRICT_STFUNC(KvRangeStateFunc, hFunc(TEvEtcdKV::TEvRangeResponse, Handle))
+    STRICT_STFUNC(KVRangeStateFunc, hFunc(TEvEtcdKV::TEvRangeResponse, Handle))
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
@@ -186,7 +191,7 @@ private:
         RunQuery();
     }
 
-    STRICT_STFUNC(KvTxnStateFunc, hFunc(TEvEtcdKV::TEvTxnResponse, Handle))
+    STRICT_STFUNC(KVTxnStateFunc, hFunc(TEvEtcdKV::TEvTxnResponse, Handle))
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
@@ -215,17 +220,17 @@ private:
         std::visit([&](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, std::shared_ptr<TDeleteRangeRequest>>) {
-                Become(&TKvTxnActor::KvDeleteStateFunc);
-                Register(CreateKvDeleteActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
+                Become(&TKVTxnActor::KVDeleteRangeStateFunc);
+                Register(CreateKVDeleteActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TPutRequest>>) {
-                Become(&TKvTxnActor::KvPutStateFunc);
-                Register(CreateKvPutActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
+                Become(&TKVTxnActor::KVPutStateFunc);
+                Register(CreateKVPutActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TRangeRequest>>) {
-                Become(&TKvTxnActor::KvRangeStateFunc);
-                Register(CreateKvRangeActor(LogComponent, SessionId, Path, currTxControl, *arg));
+                Become(&TKVTxnActor::KVRangeStateFunc);
+                Register(CreateKVRangeActor(LogComponent, SessionId, Path, currTxControl, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TTxnRequest>>) {
-                Become(&TKvTxnActor::KvTxnStateFunc);
-                Register(CreateKvTxnActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
+                Become(&TKVTxnActor::KVTxnStateFunc);
+                Register(CreateKVTxnActor(LogComponent, SessionId, Path, currTxControl, Revision, *arg));
             } else {
                 static_assert(sizeof(T) == 0);
             }
@@ -241,8 +246,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKvTxnActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TTxnRequest request) {
-    return new TKvTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
+NActors::IActor* CreateKVTxnActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd
