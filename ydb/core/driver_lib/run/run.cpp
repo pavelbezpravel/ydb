@@ -1622,6 +1622,10 @@ TIntrusivePtr<TServiceInitializersList> TKikimrRunner::CreateServiceInitializers
         sil->AddServiceInitializer(new TGraphServiceInitializer(runConfig));
     }
 
+    if (serviceMask.EnableEtcdService) {
+        sil->AddServiceInitializer(new TEtcdServiceInitializer(runConfig));
+    }
+
     return sil;
 }
 

@@ -1,4 +1,5 @@
 RECURSE(
     kv
     revision
+    service
 )
