@@ -4,6 +4,6 @@
 
 namespace NYdb::NEtcd {
 
-NActors::IActor* CreateKvTableCreatorActor(ui64 logComponent, TString sessionId, TString path);
+NActors::IActor* CreateKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path);
 
 } // namespace NYdb::NEtcd
