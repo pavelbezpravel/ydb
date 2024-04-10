@@ -2,6 +2,7 @@
 #include "utils/rpc_converters.h"
 
 #include <ydb/core/etcd/kv/events.h>
+#include <ydb/core/etcd/service/service.h>
 #include <ydb/core/grpc_services/base/base.h>
 #include <ydb/core/grpc_services/rpc_request_base.h>
 
@@ -25,9 +26,7 @@ public:
 
     void Bootstrap() {
         this->Become(&TEtcdKVRequestRPC::StateFunc);
-        
-        this->Send(this->SelfId(), new EvResponseType({}, {}, {}, {}));
-        Y_UNUSED(NEtcd::FillRequest(*Request_->GetProtoRequest()));
+        this->Send(NYdb::NEtcd::MakeEtcdServiceId(), new EvRequestType(NEtcd::FillRequest(*Request_->GetProtoRequest())));
     }
 
 private:
