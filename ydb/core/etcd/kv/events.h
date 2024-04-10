@@ -11,7 +11,8 @@ namespace NYdb::NEtcd {
 struct TEvEtcdKV {
     // Event ids
     enum EEv : ui32 {
-        EvCreateTableResponse = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_KV),
+        EvCreateTableRequest = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_KV),
+        EvCreateTableResponse,
         EvRangeRequest,
         EvRangeResponse,
         EvPutRequest,
@@ -33,8 +34,10 @@ struct TEvEtcdKV {
     );
 
     // Events
-    struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {
-    };
+
+    struct TEvCreateTableRequest : public NActors::TEventLocal<TEvCreateTableRequest, EvCreateTableRequest> {};
+
+    struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {};
 
     struct TEvRangeRequest : public NActors::TEventLocal<TEvRangeRequest, EvRangeRequest> {
         TEvRangeRequest(TRangeRequest&& request) : Request_(request) {}
