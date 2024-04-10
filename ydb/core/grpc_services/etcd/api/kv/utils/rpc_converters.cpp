@@ -94,18 +94,16 @@ NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
 }
 
 etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response) {
-    auto out = etcdserverpb::TxnResponse{};
     Y_UNUSED(response);
-
-
-
-    return out;
+    return {};
 
 }
 
 NYdb::NEtcd::TCompactionRequest FillRequest(const etcdserverpb::CompactionRequest& request) {
-    Y_UNUSED(request);
-    return {};
+    return {
+        request.revision(),
+        request.physical()
+    };
 }
 
 etcdserverpb::CompactionResponse FillResponse(const NYdb::NEtcd::TCompactionResponse& response) {
