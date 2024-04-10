@@ -4,6 +4,6 @@
 
 namespace NYdb::NEtcd {
 
-NActors::IActor* CreateRevisionTableCreatorActor(ui64 logComponent, TString sessionId, TString path);
+NActors::IActor* CreateRevisionTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie);
 
 } // namespace NYdb::NEtcd

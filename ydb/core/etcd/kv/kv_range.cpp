@@ -17,8 +17,9 @@ namespace {
 
 class TKVRangeActor : public TQueryBase {
 public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TRangeRequest&& request)
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, uint64_t cookie, TRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
+        , Cookie(cookie)
         , Request(request) {
     }
 
@@ -173,18 +174,19 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKV::TEvRangeResponse(status, std::move(issues), TxId, std::move(Response)));
+        Send(Owner, new TEvEtcdKV::TEvRangeResponse(status, std::move(issues), TxId, std::move(Response)), {}, Cookie);
     }
 
 private:
+    uint64_t Cookie;
     TRangeRequest Request;
     TRangeResponse Response;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TRangeRequest request) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(request));
+NActors::IActor* CreateKVRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, uint64_t cookie, TRangeRequest request) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

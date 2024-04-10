@@ -52,11 +52,12 @@ struct TResponseTraits<TKVTxnActor> {
 template<typename TDerived>
 class TKVBaseActor : public NActors::TActorBootstrapped<TDerived> {
 public:
-    TKVBaseActor(ui64 logComponent, TString&& sessionId, TString&& path)
+    TKVBaseActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie)
         : LogComponent(logComponent)
         , SessionId(sessionId)
         , Path(path)
-        , TxControl(NKikimr::TQueryBase::TTxControl::BeginAndCommitTx()) {
+        , TxControl(NKikimr::TQueryBase::TTxControl::BeginAndCommitTx())
+        , Cookie(cookie) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
@@ -77,7 +78,7 @@ protected:
 
         this->Become(&TKVBaseActor<TDerived>::RevisionStateFunc);
 
-        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl));
+        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl, Cookie));
     }
 
     STRICT_STFUNC(RevisionStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle))
@@ -109,7 +110,7 @@ protected:
     }
 
     void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {
-        this->Send(Owner, new TEvKVResponse(status, std::move(issues), TxId, std::move(GetDerived().Response)));
+        this->Send(Owner, new TEvKVResponse(status, std::move(issues), TxId, std::move(GetDerived().Response)), {}, Cookie);
         this->PassAway();
     }
 
@@ -123,12 +124,13 @@ protected:
     NKikimr::TQueryBase::TTxControl TxControl;
 
     i64 Revision;
+    uint64_t Cookie;
 };
 
 class TKVDeleteRangeActor : public TKVBaseActor<TKVDeleteRangeActor> {
 public:
-    TKVDeleteRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, TDeleteRangeRequest&& request)
-        : TKVBaseActor<TKVDeleteRangeActor>(logComponent, std::move(sessionId), std::move(path))
+    TKVDeleteRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TDeleteRangeRequest&& request)
+        : TKVBaseActor<TKVDeleteRangeActor>(logComponent, std::move(sessionId), std::move(path), cookie)
         , Request(request) {
     }
 
@@ -139,7 +141,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVDeleteRangeActor::KVStateFunc);
 
-        Register(CreateKVDeleteActor(LogComponent, SessionId, Path, TxControl, Revision, std::move(Request)));
+        Register(CreateKVDeleteActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
     }
 
 public:
@@ -149,8 +151,8 @@ public:
 
 class TKVPutActor : public TKVBaseActor<TKVPutActor> {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TPutRequest&& request)
-        : TKVBaseActor<TKVPutActor>(logComponent, std::move(sessionId), std::move(path))
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TPutRequest&& request)
+        : TKVBaseActor<TKVPutActor>(logComponent, std::move(sessionId), std::move(path), cookie)
         , Request(request) {
     }
 
@@ -161,7 +163,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVPutActor::KVStateFunc);
 
-        Register(CreateKVPutActor(LogComponent, SessionId, Path, TxControl, Revision, std::move(Request)));
+        Register(CreateKVPutActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
     }
 
 public:
@@ -171,8 +173,8 @@ public:
 
 class TKVRangeActor : public TKVBaseActor<TKVRangeActor> {
 public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, TRangeRequest&& request)
-        : TKVBaseActor<TKVRangeActor>(logComponent, std::move(sessionId), std::move(path))
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TRangeRequest&& request)
+        : TKVBaseActor<TKVRangeActor>(logComponent, std::move(sessionId), std::move(path), cookie)
         , Request(request) {
     }
 
@@ -183,7 +185,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVRangeActor::KVStateFunc);
 
-        Register(CreateKVRangeActor(LogComponent, SessionId, Path, TxControl, std::move(Request)));
+        Register(CreateKVRangeActor(LogComponent, SessionId, Path, TxControl, Cookie, std::move(Request)));
     }
 
 public:
@@ -193,8 +195,8 @@ public:
 
 class TKVTxnActor : public TKVBaseActor<TKVTxnActor> {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxnRequest&& request)
-        : TKVBaseActor<TKVTxnActor>(logComponent, std::move(sessionId), std::move(path))
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TTxnRequest&& request)
+        : TKVBaseActor<TKVTxnActor>(logComponent, std::move(sessionId), std::move(path), cookie)
         , Request(request) {
     }
 
@@ -205,7 +207,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVTxnActor::KVStateFunc);
 
-        Register(CreateKVTxnActor(LogComponent, SessionId, Path, TxControl, Revision, std::move(Request)));
+        Register(CreateKVTxnActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
     }
 
 public:
@@ -215,20 +217,20 @@ public:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, TDeleteRangeRequest request) {
-    return new TKVDeleteRangeActor(logComponent, std::move(sessionId), std::move(path), std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TDeleteRangeRequest request) {
+    return new TKVDeleteRangeActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, TRangeRequest request) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TRangeRequest request) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, TTxnRequest request) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

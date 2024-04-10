@@ -16,10 +16,11 @@ namespace {
 
 class TKVTableCreatorActor : public NActors::TActorBootstrapped<TKVTableCreatorActor> {
 public:
-    TKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path)
+    TKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie)
         : LogComponent(logComponent)
         , SessionId(std::move(sessionId))
-        , Path(std::move(path)) {
+        , Path(std::move(path))
+        , Cookie(cookie) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
@@ -68,7 +69,7 @@ private:
     }
 
     void Finish() {
-        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse());
+        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse(), {}, Cookie);
         PassAway();
     }
 
@@ -78,12 +79,14 @@ private:
     NActors::TActorId Owner;
 
     TString Path;
+    uint64_t Cookie;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path) {
-    return new TKVTableCreatorActor(logComponent, sessionId, std::move(path));
+NActors::IActor* CreateKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
+    Y_UNUSED(cookie);
+    return new TKVTableCreatorActor(logComponent, sessionId, std::move(path), cookie);
 }
 
 } // namespace NYdb::NEtcd
