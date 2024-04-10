@@ -130,6 +130,12 @@ struct TTxnResponse {
 };
 
 // TODO [pavelbezpravel]: WIP.
+
+struct TCompactionRequest {
+    i64 revision;
+    bool physical;
+};
+
 struct TCompactionResponse {};
 
 } // namespace NYdb::NEtcd
