@@ -18,7 +18,7 @@ etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeRe
 NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request);
 etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response);
 
-NYdb::NEtcd::TTxnCompareRequest FillRequest(const etcdserverpb::CompactionRequest& request);
+NYdb::NEtcd::TCompactionRequest FillRequest(const etcdserverpb::CompactionRequest& request);
 etcdserverpb::CompactionResponse FillResponse(const NYdb::NEtcd::TCompactionResponse& response);
 
 } // namespace NKikimr::NGRpcService::NEtcd

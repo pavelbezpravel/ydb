@@ -103,7 +103,7 @@ etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response
 
 }
 
-NYdb::NEtcd::TTxnCompareRequest FillRequest(const etcdserverpb::CompactionRequest& request) {
+NYdb::NEtcd::TCompactionRequest FillRequest(const etcdserverpb::CompactionRequest& request) {
     Y_UNUSED(request);
     return {};
 }
