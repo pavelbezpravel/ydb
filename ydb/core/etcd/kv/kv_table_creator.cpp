@@ -30,6 +30,7 @@ public:
 
     void Bootstrap() {
         Become(&TKVTableCreatorActor::CreateTableStateFunc);
+        CreateTable();
     }
 
 private:
@@ -85,7 +86,6 @@ private:
 } // anonymous namespace
 
 NActors::IActor* CreateKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
-    Y_UNUSED(cookie);
     return new TKVTableCreatorActor(logComponent, sessionId, std::move(path), cookie);
 }
 

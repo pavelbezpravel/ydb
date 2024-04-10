@@ -28,6 +28,7 @@ public:
 
     void Bootstrap() {
         Become(&TRevisionTableCreatorActor::CreateTableStateFunc);
+        CreateTable();
     }
 
     void OnRunQuery() override {
