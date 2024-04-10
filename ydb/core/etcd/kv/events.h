@@ -12,11 +12,16 @@ struct TEvEtcdKV {
     // Event ids
     enum EEv : ui32 {
         EvCreateTableResponse = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_KV),
+        EvRangeRequest,
         EvRangeResponse,
+        EvPutRequest,
         EvPutResponse,
+        EvDeleteRangeRequest,
         EvDeleteRangeResponse,
         EvTxnCompareResponse,
+        EvTxnRequest,
         EvTxnResponse,
+        EvCompactionRequest,
         EvCompactionResponse,
 
         EvEnd
@@ -29,6 +34,12 @@ struct TEvEtcdKV {
 
     // Events
     struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {
+    };
+
+    struct TEvRangeRequest : public NActors::TEventLocal<TEvRangeRequest, EvRangeRequest> {
+        TEvRangeRequest(TRangeRequest&& request) : Request_(request) {}
+
+        TRangeRequest Request_;
     };
 
     struct TEvRangeResponse : public NActors::TEventLocal<TEvRangeResponse, EvRangeResponse> {
@@ -46,6 +57,12 @@ struct TEvEtcdKV {
         TRangeResponse Response;
     };
 
+    struct TEvPutRequest : public NActors::TEventLocal<TEvPutRequest, EvPutRequest> {
+        TEvPutRequest(TPutRequest&& request) : Request_(request) {}
+
+        TPutRequest Request_;
+    };
+
     struct TEvPutResponse : public NActors::TEventLocal<TEvPutResponse, EvPutResponse> {
         TEvPutResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TPutResponse&& response)
             : Status(status)
@@ -59,6 +76,12 @@ struct TEvEtcdKV {
         NYql::TIssues Issues;
         TString TxId;
         TPutResponse Response;
+    };
+
+    struct TEvDeleteRangeRequest : public NActors::TEventLocal<TEvDeleteRangeRequest, EvDeleteRangeRequest> {
+        TEvDeleteRangeRequest(TDeleteRangeRequest&& request) : Request_(request) {}
+
+        TDeleteRangeRequest Request_;
     };
 
     struct TEvDeleteRangeResponse : public NActors::TEventLocal<TEvDeleteRangeResponse, EvDeleteRangeResponse> {
@@ -91,6 +114,12 @@ struct TEvEtcdKV {
         TTxnCompareResponse Response;
     };
 
+    struct TEvTxnRequest : public NActors::TEventLocal<TEvTxnRequest, EvTxnRequest> {
+        TEvTxnRequest(TTxnRequest&& request) : Request_(request) {}
+
+        TTxnRequest Request_;
+    };
+
     struct TEvTxnResponse : public NActors::TEventLocal<TEvTxnResponse, EvTxnResponse> {
         TEvTxnResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, TTxnResponse&& response)
             : Status(status)
@@ -104,6 +133,12 @@ struct TEvEtcdKV {
         NYql::TIssues Issues;
         TString TxId;
         TTxnResponse Response;
+    };
+
+    struct TEvCompactionRequest : public NActors::TEventLocal<TEvCompactionRequest, EvCompactionRequest> {
+        TEvCompactionRequest(TCompactionRequest&& request) : Request_(request) {}
+
+        TCompactionRequest Request_;
     };
 
     struct TEvCompactionResponse : public NActors::TEventLocal<TEvCompactionResponse, EvCompactionResponse> {
