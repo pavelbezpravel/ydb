@@ -117,13 +117,29 @@ private:
             Requests[Cookie++] = ev;
             return;
         }
-        this->Send(ev->Sender, new TEvEtcdKV::TEvRangeResponse({}, {}, {}, {}), {}, {});
+        this->Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
         Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvRangeResponse\n";
-        Y_UNUSED(ev);
+
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvRangeResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvRangeRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvRangeRequest type.\n";
+            return;
+        }
+
+        this->Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
@@ -138,13 +154,29 @@ private:
             Requests[Cookie++] = ev;
             return;
         }
-        this->Send(ev->Sender, new TEvEtcdKV::TEvPutResponse({}, {}, {}, {}), {}, {});
+        this->Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
         Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvPutResponse\n";
-        Y_UNUSED(ev);
+
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvPutResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvPutRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvPutRequest type.\n";
+            return;
+        }
+
+        this->Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
@@ -159,13 +191,29 @@ private:
             Requests[Cookie++] = ev;
             return;
         }
-        this->Send(ev->Sender, new TEvEtcdKV::TEvDeleteRangeResponse({}, {}, {}, {}), {}, {});
+        this->Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
         Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvDeleteRangeResponse\n";
-        Y_UNUSED(ev);
+
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvDeleteRangeResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvDeleteRangeRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvDeleteRangeRequest type.\n";
+            return;
+        }
+
+        this->Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
@@ -180,13 +228,29 @@ private:
             Requests[Cookie++] = ev;
             return;
         }
-        this->Send(ev->Sender, new TEvEtcdKV::TEvTxnResponse({}, {}, {}, {}), {}, {});
+        this->Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
         Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvTxnResponse\n";
-        Y_UNUSED(ev);
+
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvTxnResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvTxnRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvTxnRequest type.\n";
+            return;
+        }
+
+        this->Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
@@ -201,13 +265,30 @@ private:
             Requests[Cookie++] = ev;
             return;
         }
+        // TODO [pavelbezpravel]: add actor for compaction.
         this->Send(ev->Sender, new TEvEtcdKV::TEvCompactionResponse({}, {}, {}, {}), {}, {});
         Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvCompactionResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCompactionResponse\n";
-        Y_UNUSED(ev);
+
+       auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvCompactionResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvCompactionRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvCompactionRequest type.\n";
+            return;
+        }
+
+        this->Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
     }
 
 private:
