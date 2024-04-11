@@ -129,8 +129,6 @@ struct TTxnResponse {
     TVector<TResponseOp> Responses;
 };
 
-// TODO [pavelbezpravel]: WIP.
-
 struct TCompactionRequest {
     i64 revision;
     bool physical;
