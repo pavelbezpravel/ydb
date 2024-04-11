@@ -50,7 +50,23 @@ private:
 
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
         std::cerr << "TEvEtcdRevision::TEvRevisionResponse\n";
-        Y_UNUSED(ev);
+
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdRevision::TEvRevisionResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdRevision::TEvCreateTableRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdRevision::TEvCreateTableRequest type.\n";
+            return;
+        }
+
+        this->Send(this->SelfId(), new TEvEtcdKV::TEvCreateTableRequest(), {}, requestPtr->Get()->Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvCreateTableRequest::TPtr& ev) {
@@ -61,7 +77,32 @@ private:
 
     void Handle(TEvEtcdKV::TEvCreateTableResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCreateTableResponse\n";
-        Y_UNUSED(ev);
+        
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request doesn't exist (TEvEtcdKV::TEvCreateTableResponse).\n";
+            return;
+        }
+        auto requestVariant = it->second;
+        Requests.erase(it);
+        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvCreateTableRequest::TPtr>(&requestVariant);
+        if (!requestPtr) {
+            // TODO [pavelbezpravel]: log error!
+            std::cerr << "Request differs from the TEvEtcdKV::TEvCreateTableRequest type.\n";
+            return;
+        }
+
+        HaveTablesCreated = true;
+        InProgress = false;
+
+        for (const auto& [cookie, request] : Requests) {
+            std::visit([&](auto&& arg) {
+                // TODO [pavelbezpravel]: Cookie, cookie or arg->Cookie?
+                this->Send(new NActors::IEventHandle(this->SelfId(), arg->Sender, arg->Get(), {}, cookie));
+            }, request);
+        }
+        Requests.clear();
     }
 
     void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
@@ -153,6 +194,7 @@ private:
     TMap<uint64_t, TRequests> Requests{};
     uint64_t Cookie = 0;
     bool HaveTablesCreated = false;
+    bool InProgress = false;
 };
 
 NActors::IActor* CreateEtcdService() {
