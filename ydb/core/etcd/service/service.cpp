@@ -8,6 +8,7 @@
 #include <ydb/library/actors/core/actor.h>
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
+#include "ydb/library/services/services.pb.h"
 
 namespace NYdb::NEtcd {
 
@@ -43,7 +44,8 @@ private:
 
     void Handle(TEvEtcdRevision::TEvCreateTableRequest::TPtr& ev) {
         std::cerr << "TEvEtcdRevision::TEvCreateTableRequest\n";
-        Y_UNUSED(ev);
+        this->Register(NYdb::NEtcd::CreateRevisionTableCreatorActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie));
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
@@ -53,7 +55,8 @@ private:
 
     void Handle(TEvEtcdKV::TEvCreateTableRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCreateTableRequest\n";
-        Y_UNUSED(ev);
+        this->Register(NYdb::NEtcd::CreateKVTableCreatorActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie));
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvCreateTableResponse::TPtr& ev) {
@@ -63,7 +66,12 @@ private:
 
     void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvRangeRequest\n";
+        if (!HaveTablesCreated) {
+            Requests[Cookie++] = ev;
+            return;
+        }
         this->Send(ev->Sender, new TEvEtcdKV::TEvRangeResponse({}, {}, {}, {}), {}, {});
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
@@ -73,7 +81,12 @@ private:
 
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvPutRequest\n";
+        if (!HaveTablesCreated) {
+            Requests[Cookie++] = ev;
+            return;
+        }
         this->Send(ev->Sender, new TEvEtcdKV::TEvPutResponse({}, {}, {}, {}), {}, {});
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
@@ -83,7 +96,12 @@ private:
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvDeleteRangeRequest\n";
+        if (!HaveTablesCreated) {
+            Requests[Cookie++] = ev;
+            return;
+        }
         this->Send(ev->Sender, new TEvEtcdKV::TEvDeleteRangeResponse({}, {}, {}, {}), {}, {});
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
@@ -93,7 +111,12 @@ private:
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvTxnRequest\n";
+        if (!HaveTablesCreated) {
+            Requests[Cookie++] = ev;
+            return;
+        }
         this->Send(ev->Sender, new TEvEtcdKV::TEvTxnResponse({}, {}, {}, {}), {}, {});
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
@@ -103,7 +126,12 @@ private:
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCompactionRequest\n";
+        if (!HaveTablesCreated) {
+            Requests[Cookie++] = ev;
+            return;
+        }
         this->Send(ev->Sender, new TEvEtcdKV::TEvCompactionResponse({}, {}, {}, {}), {}, {});
+        Requests[Cookie++] = ev;
     }
 
     void Handle(TEvEtcdKV::TEvCompactionResponse::TPtr& ev) {
@@ -120,6 +148,11 @@ private:
         TEvEtcdKV::TEvDeleteRangeRequest::TPtr,
         TEvEtcdKV::TEvTxnRequest::TPtr,
         TEvEtcdKV::TEvCompactionRequest::TPtr>;
+
+    const TString Path = ".etcd";
+    TMap<uint64_t, TRequests> Requests{};
+    uint64_t Cookie = 0;
+    bool HaveTablesCreated = false;
 };
 
 NActors::IActor* CreateEtcdService() {
