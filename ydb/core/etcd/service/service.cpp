@@ -66,7 +66,8 @@ private:
             return;
         }
 
-        this->Send(this->SelfId(), new TEvEtcdKV::TEvCreateTableRequest(), {}, requestPtr->Get()->Cookie);
+        // TODO [pavelbezpravel]: I'm not sure about this cookie.
+        this->Send(this->SelfId(), new TEvEtcdKV::TEvCreateTableRequest(), {}, Cookie);
     }
 
     void Handle(TEvEtcdKV::TEvCreateTableRequest::TPtr& ev) {
