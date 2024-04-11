@@ -5,9 +5,9 @@ SRCS(
 )
 
 PEERDIR(
-    ydb/core/etcd/kv
-    ydb/core/etcd/revision
     ydb/library/actors/core
+    ydb/library/yql/public/issue
+    ydb/public/api/protos
 )
 
 END()

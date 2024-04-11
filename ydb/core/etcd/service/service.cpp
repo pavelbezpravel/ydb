@@ -1,9 +1,6 @@
 #include <ydb/core/etcd/kv/events.h>
-#include <ydb/core/etcd/kv/kv_table_creator.h>
-#include <ydb/core/etcd/kv/kv.h>
 
 #include <ydb/core/etcd/revision/events.h>
-#include <ydb/core/etcd/revision/revision_table_creator.h>
 
 #include <ydb/library/actors/core/actor.h>
 #include <ydb/library/actors/core/actor_bootstrapped.h>
