@@ -108,6 +108,12 @@ private:
     void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvRangeRequest\n";
         if (!HaveTablesCreated) {
+            if (!InProgress) {
+                InProgress = true;
+                Requests[Cookie++] = ev;
+                this->Send(this->SelfId(), new TEvEtcdRevision::TEvCreateTableRequest(), {}, Cookie);
+                return;
+            }
             Requests[Cookie++] = ev;
             return;
         }
@@ -123,6 +129,12 @@ private:
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvPutRequest\n";
         if (!HaveTablesCreated) {
+            if (!InProgress) {
+                InProgress = true;
+                Requests[Cookie++] = ev;
+                this->Send(this->SelfId(), new TEvEtcdRevision::TEvCreateTableRequest(), {}, Cookie);
+                return;
+            }
             Requests[Cookie++] = ev;
             return;
         }
@@ -138,6 +150,12 @@ private:
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvDeleteRangeRequest\n";
         if (!HaveTablesCreated) {
+            if (!InProgress) {
+                InProgress = true;
+                Requests[Cookie++] = ev;
+                this->Send(this->SelfId(), new TEvEtcdRevision::TEvCreateTableRequest(), {}, Cookie);
+                return;
+            }
             Requests[Cookie++] = ev;
             return;
         }
@@ -153,6 +171,12 @@ private:
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvTxnRequest\n";
         if (!HaveTablesCreated) {
+            if (!InProgress) {
+                InProgress = true;
+                Requests[Cookie++] = ev;
+                this->Send(this->SelfId(), new TEvEtcdRevision::TEvCreateTableRequest(), {}, Cookie);
+                return;
+            }
             Requests[Cookie++] = ev;
             return;
         }
@@ -168,6 +192,12 @@ private:
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCompactionRequest\n";
         if (!HaveTablesCreated) {
+            if (!InProgress) {
+                InProgress = true;
+                Requests[Cookie++] = ev;
+                this->Send(this->SelfId(), new TEvEtcdRevision::TEvCreateTableRequest(), {}, Cookie);
+                return;
+            }
             Requests[Cookie++] = ev;
             return;
         }
