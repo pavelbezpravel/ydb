@@ -4,6 +4,10 @@
 
 #include <utility>
 
+#include <ydb/core/base/path.h>
+
+#include <ydb/core/etcd/base/query_base.h>
+
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
 #include <ydb/library/table_creator/table_creator.h>
@@ -14,18 +18,11 @@ namespace NYdb::NEtcd {
 
 namespace {
 
-class TKVTableCreatorActor : public NActors::TActorBootstrapped<TKVTableCreatorActor> {
+class TKVTableCreatorActor : public TQueryBase {
 public:
     TKVTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie)
-        : LogComponent(logComponent)
-        , SessionId(std::move(sessionId))
-        , Path(std::move(path))
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), TTxControl::BeginAndCommitTx())
         , Cookie(cookie) {
-    }
-
-    void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
-        NActors::TActorBootstrapped<TKVTableCreatorActor>::Registered(sys, owner);
-        Owner = owner;
     }
 
     void Bootstrap() {
@@ -33,11 +30,26 @@ public:
         CreateTable();
     }
 
+    void OnRunQuery() override {
+        // TODO [pavelbezpravel]: ...
+        RunDataQuery({}, {}, {});
+    }
+
+    void OnQueryResult() override {
+        Finish();
+    }
+
+    void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        Y_UNUSED(status);
+        Y_UNUSED(issues);
+        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse(), {}, Cookie);
+    }
+
 private:
     STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
     void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
-        Finish();
+        TQueryBase::Bootstrap();
     }
 
     static NKikimrSchemeOp::TColumnDescription Col(const TString& columnName, const char* columnType) {
@@ -69,17 +81,7 @@ private:
         );
     }
 
-    void Finish() {
-        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse(), {}, Cookie);
-        PassAway();
-    }
-
 private:
-    ui64 LogComponent;
-    TString SessionId;
-    NActors::TActorId Owner;
-
-    TString Path;
     uint64_t Cookie;
 };
 
