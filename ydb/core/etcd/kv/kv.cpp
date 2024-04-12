@@ -86,6 +86,7 @@ protected:
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
         TxId = std::move(ev->Get()->TxId);
@@ -99,6 +100,7 @@ protected:
     void Handle(TEvKVResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
         GetDerived().Response = std::move(ev->Get()->Response);
