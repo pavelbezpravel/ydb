@@ -11,7 +11,7 @@
 #include <utility>
 
 #include <ydb/core/base/path.h>
-#include <ydb/core/etcd/revision/query_base.h>
+#include <ydb/core/etcd/base/query_base.h>
 
 namespace NYdb::NEtcd {
 

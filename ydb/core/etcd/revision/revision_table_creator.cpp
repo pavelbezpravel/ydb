@@ -1,11 +1,12 @@
 #include "revision_table_creator.h"
 
 #include "events.h"
-#include "query_base.h"
 
 #include <utility>
 
 #include <ydb/core/base/path.h>
+
+#include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>

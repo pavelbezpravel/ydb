@@ -10,9 +10,10 @@
 
 #include <utility>
 
+#include <ydb/core/etcd/base/query_base.h>
+
 #include <ydb/core/etcd/revision/events.h>
 #include <ydb/core/etcd/revision/revision_inc.h>
-#include <ydb/core/etcd/revision/query_base.h>
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>

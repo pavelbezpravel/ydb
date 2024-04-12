@@ -1,11 +1,12 @@
 #include "revision_inc.h"
 
 #include "events.h"
-#include "query_base.h"
 
 #include <utility>
 
 #include <ydb/core/base/path.h>
+
+#include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
 #include <ydb/public/sdk/cpp/client/ydb_result/result.h>
