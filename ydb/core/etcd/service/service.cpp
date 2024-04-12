@@ -1,3 +1,5 @@
+#include "ydb/core/etcd/service/service.h"
+
 #include <ydb/core/etcd/kv/events.h>
 #include <ydb/core/etcd/kv/kv_table_creator.h>
 #include <ydb/core/etcd/kv/kv.h>
