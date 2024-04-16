@@ -23,8 +23,11 @@ NYdb::NEtcd::TRangeRequest FillRequest(const etcdserverpb::RangeRequest& request
 etcdserverpb::RangeResponse FillResponse(const NYdb::NEtcd::TRangeResponse& response) {
     auto out = etcdserverpb::RangeResponse{};
 
-    for (const auto KVs = response.KVs; const auto& KV : KVs) {
-        auto* kv = out.add_kvs();
+    auto* kvs = out.mutable_kvs();
+    kvs->Reserve(response.KVs.size());
+
+    for (const auto& KV : response.KVs) {
+        auto* kv = kvs->Add();
         kv->set_key(KV.key);
         kv->set_create_revision(KV.create_revision);
         kv->set_mod_revision(KV.mod_revision);
@@ -76,8 +79,12 @@ etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeRe
     auto out = etcdserverpb::DeleteRangeResponse{};
 
     out.set_deleted(response.Deleted);
-    for (const auto PrevKVs = response.PrevKVs; const auto& PrevKV : PrevKVs){
-        auto* kv= out.add_prev_kvs();
+
+    auto* prevKVs = out.mutable_prev_kvs();
+    prevKVs->Reserve(response.PrevKVs.size());
+
+    for (const auto& PrevKV : response.PrevKVs) {
+        auto* kv = prevKVs->Add();
         kv->set_key(PrevKV.key);
         kv->set_create_revision(PrevKV.create_revision);
         kv->set_mod_revision(PrevKV.mod_revision);
@@ -89,14 +96,95 @@ etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeRe
 }
 
 NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
-    Y_UNUSED(request);
-    return {};
+    auto out = NYdb::NEtcd::TTxnRequest{};
+
+    out.Compare.reserve(request.compare_size());
+
+    for (const auto& compare : request.compare()) {
+        auto& Compare = out.Compare.emplace_back();
+        Compare.Result = static_cast<NYdb::NEtcd::TTxnCompareRequest::ECompareResult>(compare.result());
+
+        if (compare.has_create_revision()) {
+            Compare.Target_create_revision = compare.create_revision();
+        }
+        if (compare.has_mod_revision()) {
+            Compare.Target_mod_revision = compare.mod_revision();
+        }
+        if (compare.has_version()) {
+            Compare.Target_version = compare.version();
+        }
+        if (compare.has_value()) {
+            Compare.Target_value = compare.value();
+        }
+
+        Compare.Key = compare.key();
+        Compare.Range_end = compare.range_end();
+    }
+
+    enum {SUCCESS, FAILURE};
+
+    out.Requests.at(SUCCESS).reserve(request.success_size());
+    for (const auto& req : request.success()) {
+        if (req.has_request_range()) {
+            out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TRangeRequest>(FillRequest(req.request_range())));
+        }
+        if (req.has_request_put()) {
+            out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TPutRequest>(FillRequest(req.request_put())));
+        }
+        if (req.has_request_delete_range()) {
+            out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TDeleteRangeRequest>(FillRequest(req.request_delete_range())));
+        }
+        if (req.has_request_txn()) {
+            out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TTxnRequest>(FillRequest(req.request_txn())));
+        }
+    }
+
+    out.Requests.at(FAILURE).reserve(request.failure_size());
+    for (const auto& req : request.failure()) {
+        if (req.has_request_range()) {
+            out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TRangeRequest>(FillRequest(req.request_range())));
+        }
+        if (req.has_request_put()) {
+            out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TPutRequest>(FillRequest(req.request_put())));
+        }
+        if (req.has_request_delete_range()) {
+            out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TDeleteRangeRequest>(FillRequest(req.request_delete_range())));
+        }
+        if (req.has_request_txn()) {
+            out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TTxnRequest>(FillRequest(req.request_txn())));
+        }
+    }
+
+    return out;
 }
 
 etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response) {
-    Y_UNUSED(response);
-    return {};
+    auto out = etcdserverpb::TxnResponse{};
 
+    out.set_succeeded(response.Succeeded);
+
+    auto* responses = out.mutable_responses();
+    responses->Reserve(response.Responses.size());
+    
+    for (const auto& Response : response.Responses) {
+        auto* response_op = responses->Add();
+        std::visit([&response_op](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, std::shared_ptr<NYdb::NEtcd::TRangeResponse>>) {
+                *response_op->mutable_response_range() = FillResponse(*arg.get());
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<NYdb::NEtcd::TPutResponse>>) {
+                *response_op->mutable_response_put() = FillResponse(*arg.get());
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<NYdb::NEtcd::TDeleteRangeResponse>>) {
+                *response_op->mutable_response_delete_range() = FillResponse(*arg.get());
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<NYdb::NEtcd::TTxnResponse>>) {
+                *response_op->mutable_response_txn() = FillResponse(*arg.get());
+            } else {
+                static_assert(sizeof(T) == 0);
+            }
+        }, Response);
+    }
+
+    return out;
 }
 
 NYdb::NEtcd::TCompactionRequest FillRequest(const etcdserverpb::CompactionRequest& request) {
