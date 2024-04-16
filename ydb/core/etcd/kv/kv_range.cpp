@@ -37,7 +37,7 @@ public:
             DECLARE $max_mod_revision AS Int64;
             DECLARE $limit AS Int64;
 
-            SELECT *, COUNT(*) OVER() AS count
+            SELECT kv.*, COUNT(*) OVER() AS count
                 FROM kv
                 WHERE key BETWEEN $key AND $range_end)",
             Path.c_str()
