@@ -124,7 +124,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, new NYdb::NEtcd::TEvEtcdKV::TEvRangeResponse({}, {}, {}, {}));
+        Send(requestPtr->Get()->Sender, ev->Get());
     }
 
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
@@ -161,7 +161,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
+        Send(requestPtr->Get()->Sender, ev->Get());
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
@@ -198,7 +198,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
+        Send(requestPtr->Get()->Sender, ev->Get());
     }
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
@@ -235,7 +235,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
+        Send(requestPtr->Get()->Sender, ev->Get());
     }
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
@@ -273,7 +273,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get(), {}, requestPtr->Get()->Cookie);
+        Send(requestPtr->Get()->Sender, ev->Get());
     }
 
 private:
