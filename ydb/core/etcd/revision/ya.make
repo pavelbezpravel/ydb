@@ -2,7 +2,8 @@ LIBRARY()
 
 SRCS(
     revision_inc.cpp
-    revision_table_creator.cpp
+    revision_table_create.cpp
+    revision_table_init.cpp
 )
 
 PEERDIR(

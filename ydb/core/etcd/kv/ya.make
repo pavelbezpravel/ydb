@@ -4,7 +4,7 @@ SRCS(
     kv_delete.cpp
     kv_put.cpp
     kv_range.cpp
-    kv_table_creator.cpp
+    kv_table_create.cpp
     kv_txn.cpp
     kv.cpp
 )

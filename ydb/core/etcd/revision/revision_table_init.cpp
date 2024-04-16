@@ -1,4 +1,4 @@
-#include "revision_table_creator.h"
+#include "revision_table_init.h"
 
 #include "events.h"
 
@@ -20,16 +20,11 @@ namespace NYdb::NEtcd {
 
 namespace {
 
-class TRevisionTableCreatorActor : public TQueryBase {
+class TRevisionTableInitActor : public TQueryBase {
 public:
-    TRevisionTableCreatorActor(ui64 logComponent, TString&& sessionId, TString path, uint64_t cookie)
+    TRevisionTableInitActor(ui64 logComponent, TString&& sessionId, TString path, uint64_t cookie)
         : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), TTxControl::BeginAndCommitTx())
         , Cookie(cookie) {
-    }
-
-    void Bootstrap() {
-        Become(&TRevisionTableCreatorActor::CreateTableStateFunc);
-        CreateTable();
     }
 
     void OnRunQuery() override {
@@ -37,10 +32,10 @@ public:
             PRAGMA TablePathPrefix("%s");
 
             $initial = AsList(
-                AsStruct(id: FALSE, revision: 0),
+                AsStruct(FALSE AS id, 0 AS revision),
             );
             UPSERT
-                INTO revision (id, revision)
+                INTO revision
                 SELECT *
                     FROM AS_TABLE($initial);
             SELECT revision FROM AS_TABLE($initial);
@@ -68,45 +63,14 @@ public:
     }
 
 private:
-    STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
-
-    void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
-        TQueryBase::Bootstrap();
-    }
-
-    static NKikimrSchemeOp::TColumnDescription Col(const TString& columnName, const char* columnType) {
-        NKikimrSchemeOp::TColumnDescription desc;
-        desc.SetName(columnName);
-        desc.SetType(columnType);
-        return desc;
-    }
-
-    static NKikimrSchemeOp::TColumnDescription Col(const TString& columnName, NKikimr::NScheme::TTypeId columnType) {
-        return Col(columnName, NKikimr::NScheme::TypeName(columnType));
-    }
-
-    void CreateTable() {
-        Register(
-            NKikimr::CreateTableCreator(
-                {Path, "revision"},
-                {
-                    Col("id", NKikimr::NScheme::NTypeIds::Bool),
-                    Col("revision", NKikimr::NScheme::NTypeIds::Int64),
-                },
-                {"id"},
-                static_cast<NKikimrServices::EServiceKikimr>(LogComponent))
-        );
-    }
-
-private:
     i64 Revision;
     uint64_t Cookie;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionTableCreatorActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
-    return new TRevisionTableCreatorActor(logComponent, std::move(sessionId), std::move(path), cookie);
+NActors::IActor* CreateRevisionTableInitActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
+    return new TRevisionTableInitActor(logComponent, std::move(sessionId), std::move(path), cookie);
 }
 
 } // namespace NYdb::NEtcd
