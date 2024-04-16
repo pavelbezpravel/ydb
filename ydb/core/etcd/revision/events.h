@@ -12,7 +12,7 @@ namespace NYdb::NEtcd {
 struct TEvEtcdRevision {
     // Event ids
     enum EEv : ui32 {
-        EvCreateTableRequest = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_REVISION),
+        EvCreateTableResponse = EventSpaceBegin(NKikimr::TKikimrEvents::ES_ETCD_REVISION),
         EvRevisionResponse,
 
         EvEnd
@@ -25,7 +25,7 @@ struct TEvEtcdRevision {
 
     // Events
 
-    struct TEvCreateTableRequest : public NActors::TEventLocal<TEvCreateTableRequest, EvCreateTableRequest> {};
+    struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {};
 
     struct TEvRevisionResponse : public NActors::TEventLocal<TEvRevisionResponse, EvRevisionResponse> {
         TEvRevisionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, i64 revision)
