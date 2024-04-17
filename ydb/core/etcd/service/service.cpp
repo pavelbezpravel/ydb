@@ -15,6 +15,9 @@
 #include <ydb/library/table_creator/table_creator.h>
 #include "ydb/library/services/services.pb.h"
 
+#define LOG_E(stream) LOG_ERROR_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, "[ydb] [EtcdService]: " << stream)
+#define LOG_D(stream) LOG_DEBUG_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, "[ydb] [EtcdService]: " << stream)
+
 namespace NYdb::NEtcd {
 
 class TEtcdService : public NActors::TActorBootstrapped<TEtcdService> {
@@ -52,29 +55,29 @@ private:
 
     void CreateRevisionTable() {
         std::cerr << "TEvEtcdRevision::TEvCreateTableRequest\n";
-        Register(NYdb::NEtcd::CreateRevisionTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie));
+        Register(NYdb::NEtcd::CreateRevisionTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
     }
 
     void Handle(TEvEtcdRevision::TEvCreateTableResponse::TPtr& ev) {
         std::cerr << "TEvEtcdRevision::TEvCreateTableResponse\n";
-        LOG_DEBUG_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, ev->ToString());
-        Register(NYdb::NEtcd::CreateRevisionTableInitActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie));
+        LOG_D(ev->ToString());
+        Register(NYdb::NEtcd::CreateRevisionTableInitActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
     }
 
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
         std::cerr << "TEvEtcdRevision::TEvRevisionResponse\n";
-        LOG_DEBUG_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, ev->ToString());
+        LOG_D(ev->ToString());
         ProcessCached();
     }
 
     void CreateKVTable() {
         std::cerr << "TEvEtcdKV::TEvCreateTableRequest\n";
-        Register(NYdb::NEtcd::CreateKVTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie));
+        Register(NYdb::NEtcd::CreateKVTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
     }
 
     void Handle(TEvEtcdKV::TEvCreateTableResponse::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCreateTableResponse\n";
-        LOG_DEBUG_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, ev->ToString());
+        LOG_D(ev->ToString());
         ProcessCached();
     }
 
@@ -86,20 +89,19 @@ private:
                     Send(new NActors::IEventHandle(SelfId(), arg->Sender, arg->Get()));
                 }, request);
             }
-            Requests.clear();
+            // TODO [pavelbezpravel]: We need to clear Requests, I guess, but it works.
+            // Requests.clear();
         }
     }
 
     void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvRangeRequest\n";
         if (TablesCreating != 0) {
+            Requests[Cookie++] = ev;
             if (!InProgress) {
                 InProgress = true;
-                Requests[Cookie++] = ev;
                 CreateTables();
-                return;
             }
-            Requests[Cookie++] = ev;
             return;
         }
         Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
@@ -124,19 +126,17 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get());
+        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvPutRequest\n";
         if (TablesCreating != 0) {
+            Requests[Cookie++] = ev;
             if (!InProgress) {
                 InProgress = true;
-                Requests[Cookie++] = ev;
                 CreateTables();
-                return;
             }
-            Requests[Cookie++] = ev;
             return;
         }
         Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
@@ -161,19 +161,17 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get());
+        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvDeleteRangeRequest\n";
         if (TablesCreating != 0) {
+            Requests[Cookie++] = ev;
             if (!InProgress) {
                 InProgress = true;
-                Requests[Cookie++] = ev;
                 CreateTables();
-                return;
             }
-            Requests[Cookie++] = ev;
             return;
         }
         Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
@@ -198,19 +196,17 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get());
+        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvTxnRequest\n";
         if (TablesCreating != 0) {
+            Requests[Cookie++] = ev;
             if (!InProgress) {
                 InProgress = true;
-                Requests[Cookie++] = ev;
                 CreateTables();
-                return;
             }
-            Requests[Cookie++] = ev;
             return;
         }
         Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
@@ -235,19 +231,17 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get());
+        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
         std::cerr << "TEvEtcdKV::TEvCompactionRequest\n";
         if (TablesCreating != 0) {
+            Requests[Cookie++] = ev;
             if (!InProgress) {
                 InProgress = true;
-                Requests[Cookie++] = ev;
                 CreateTables();
-                return;
             }
-            Requests[Cookie++] = ev;
             return;
         }
         // TODO [pavelbezpravel]: add actor for compaction.
@@ -273,7 +267,7 @@ private:
             return;
         }
 
-        Send(requestPtr->Get()->Sender, ev->Get());
+        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
 private:
