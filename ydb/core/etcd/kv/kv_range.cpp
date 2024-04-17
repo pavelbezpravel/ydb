@@ -45,7 +45,7 @@ public:
 
         if (Request.revision > 0) {
             query << R"(
-                    AND create_revision <= $revision AND (delete_rev IS NULL OR $revision <= delete_rev))";
+                    AND create_revision <= $revision AND (delete_revision IS NULL OR $revision <= delete_revision))";
         }
 
         if (Request.min_create_revision > 0) {
