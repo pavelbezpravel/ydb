@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <ydb/core/etcd/kv/events.h>
+
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
 #include <ydb/library/table_creator/table_creator.h>
@@ -36,7 +38,8 @@ private:
     STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
     void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr& ev) {
-        Send(Owner, ev->Get(), {}, Cookie);
+        Y_UNUSED(ev);
+        Send(Owner, new NYdb::NEtcd::TEvEtcdKV::TEvCreateTableResponse(), {}, Cookie);
         PassAway();
     }
 
