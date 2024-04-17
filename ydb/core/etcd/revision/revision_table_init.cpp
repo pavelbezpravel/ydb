@@ -27,9 +27,10 @@ public:
         , Cookie(cookie) {
     }
 
+    // TODO [pavelbezpravel]: fix prefix.
     void OnRunQuery() override {
         auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             $initial = AsList(
                 AsStruct(FALSE AS id, 0 AS revision),
@@ -39,7 +40,7 @@ public:
                 SELECT *
                     FROM AS_TABLE($initial);
             SELECT revision FROM AS_TABLE($initial);
-        )", Path.c_str());
+        )");
 
         RunDataQuery(query, nullptr, TxControl);
     }
