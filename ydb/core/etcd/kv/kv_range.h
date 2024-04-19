@@ -7,6 +7,6 @@ namespace NYdb::NEtcd {
 
 struct TRangeRequest;
 
-NActors::IActor* CreateKVRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, uint64_t cookie, TRangeRequest rangeRequest);
+NActors::IActor* CreateKVRangeActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, uint64_t cookie, TRangeRequest rangeRequest);
 
 } // namespace NYdb::NEtcd

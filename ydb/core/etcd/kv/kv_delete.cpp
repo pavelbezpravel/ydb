@@ -17,8 +17,8 @@ namespace {
 
 class TKVDeleteActor : public TQueryBase {
 public:
-    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
+    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , Request(request) {
@@ -66,8 +66,7 @@ public:
                 .Build()
             .AddParam("$range_end")
                 .String(Request.RangeEnd)
-                .Build()
-            .Build();
+                .Build();
 
         RunDataQuery(query, &params, TxControl);
     }
@@ -128,8 +127,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, uint64_t cookie, TDeleteRangeRequest request) {
-    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, cookie, std::move(request));
+NActors::IActor* CreateKVDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TDeleteRangeRequest request) {
+    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

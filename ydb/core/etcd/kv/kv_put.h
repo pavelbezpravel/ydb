@@ -7,6 +7,6 @@ namespace NYdb::NEtcd {
 
 struct TPutRequest;
 
-NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, uint64_t cookie, TPutRequest putRequest);
+NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TPutRequest putRequest);
 
 } // namespace NYdb::NEtcd

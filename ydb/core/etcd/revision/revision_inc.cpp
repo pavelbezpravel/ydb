@@ -17,8 +17,8 @@ namespace {
 
 class TRevisionIncActor : public TQueryBase {
 public:
-    TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, uint64_t cookie)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl)
+    TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, uint64_t cookie)
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl, std::move(txId))
         , Cookie(cookie) {
     }
 
@@ -52,7 +52,7 @@ public:
         NYdb::TResultSetParser parser(ResultSets[0]);
         parser.TryNextRow();
 
-        Revision = parser.ColumnParser("revision").GetInt64();
+        Revision = *parser.ColumnParser("revision").GetOptionalInt64();
 
         Finish();
     }
@@ -68,8 +68,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionIncActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, uint64_t cookie) {
-    return new TRevisionIncActor(logComponent, std::move(sessionId), std::move(path), txControl, cookie);
+NActors::IActor* CreateRevisionIncActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, uint64_t cookie) {
+    return new TRevisionIncActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie);
 }
 
 } // namespace NYdb::NEtcd

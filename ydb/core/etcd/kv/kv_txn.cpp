@@ -19,8 +19,8 @@ namespace {
 
 class TKVTxnActor : public TQueryBase {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, i64 revision, uint64_t cookie, TTxnRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TTxnRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , RequestIndex(-1)
@@ -122,8 +122,6 @@ public:
         targetParam.EndList();
         targetParam.Build();
 
-        params.Build();
-
         RunDataQuery(query, &params, TxControl);
     }
 
@@ -222,16 +220,16 @@ private:
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, std::shared_ptr<TDeleteRangeRequest>>) {
                 Become(&TKVTxnActor::KVDeleteRangeStateFunc);
-                Register(CreateKVDeleteActor(LogComponent, SessionId, Path, currTxControl, Revision, Cookie, *arg));
+                Register(CreateKVDeleteActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TPutRequest>>) {
                 Become(&TKVTxnActor::KVPutStateFunc);
-                Register(CreateKVPutActor(LogComponent, SessionId, Path, currTxControl, Revision, Cookie, *arg));
+                Register(CreateKVPutActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TRangeRequest>>) {
                 Become(&TKVTxnActor::KVRangeStateFunc);
-                Register(CreateKVRangeActor(LogComponent, SessionId, Path, currTxControl, Cookie, *arg));
+                Register(CreateKVRangeActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TTxnRequest>>) {
                 Become(&TKVTxnActor::KVTxnStateFunc);
-                Register(CreateKVTxnActor(LogComponent, SessionId, Path, currTxControl, Revision, Cookie, *arg));
+                Register(CreateKVTxnActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else {
                 static_assert(sizeof(T) == 0);
             }
@@ -248,8 +246,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTxnActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, uint64_t cookie, TTxnRequest request) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, cookie, std::move(request));
+NActors::IActor* CreateKVTxnActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

@@ -79,7 +79,7 @@ protected:
 
         this->Become(&TKVBaseActor<TDerived>::RevisionStateFunc);
 
-        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl, Cookie));
+        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie));
     }
 
     STRICT_STFUNC(RevisionStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle))
@@ -144,7 +144,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVDeleteRangeActor::KVStateFunc);
 
-        Register(CreateKVDeleteActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
+        Register(CreateKVDeleteActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
     }
 
 public:
@@ -166,7 +166,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVPutActor::KVStateFunc);
 
-        Register(CreateKVPutActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
+        Register(CreateKVPutActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
     }
 
 public:
@@ -188,7 +188,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVRangeActor::KVStateFunc);
 
-        Register(CreateKVRangeActor(LogComponent, SessionId, Path, TxControl, Cookie, std::move(Request)));
+        Register(CreateKVRangeActor(LogComponent, SessionId, Path, TxControl, TxId, Cookie, std::move(Request)));
     }
 
 public:
@@ -210,7 +210,7 @@ public:
     void RegisterKVRequest() {
         Become(&TKVTxnActor::KVStateFunc);
 
-        Register(CreateKVTxnActor(LogComponent, SessionId, Path, TxControl, Revision, Cookie, std::move(Request)));
+        Register(CreateKVTxnActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
     }
 
 public:

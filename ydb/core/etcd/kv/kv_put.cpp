@@ -17,8 +17,8 @@ namespace {
 
 class TKVPutActor : public TQueryBase {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, i64 revision, uint64_t cookie, TPutRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TPutRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , Request(request) {
@@ -94,8 +94,6 @@ public:
         newKVParam.EndList();
         newKVParam.Build();
 
-        params.Build();
-
         RunDataQuery(query, &params, TxControl);
     }
 
@@ -140,8 +138,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, i64 revision, uint64_t cookie, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, revision, cookie, std::move(request));
+NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd
