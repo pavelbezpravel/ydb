@@ -13,7 +13,7 @@ namespace NMiniKQL {
 
 class TKqpScanComputeContext;
 
-TComputationNodeFactory GetKqpActorComputeFactory(TKqpScanComputeContext* computeCtx);
+TComputationNodeFactory GetKqpActorComputeFactory(TKqpScanComputeContext* computeCtx, const std::optional<NKqp::TKqpFederatedQuerySetup>& federatedQuerySetup);
 
 } // namespace NMiniKQL
 
@@ -44,14 +44,13 @@ public:
 
 IActor* CreateKqpComputeActor(const TActorId& executerId, ui64 txId, NYql::NDqProto::TDqTask* task,
     NYql::NDq::IDqAsyncIoFactory::TPtr asyncIoFactory,
-    const NKikimr::NMiniKQL::IFunctionRegistry* functionRegistry,
     const NYql::NDq::TComputeRuntimeSettings& settings, const NYql::NDq::TComputeMemoryLimits& memoryLimits,
     NWilson::TTraceId traceId,
-    TIntrusivePtr<NActors::TProtoArenaHolder> arena);
+    TIntrusivePtr<NActors::TProtoArenaHolder> arena,
+    const std::optional<TKqpFederatedQuerySetup>& federatedQuerySetup);
 
 IActor* CreateKqpScanComputeActor(const TActorId& executerId, ui64 txId,
     NYql::NDqProto::TDqTask* task, NYql::NDq::IDqAsyncIoFactory::TPtr asyncIoFactory,
-    const NKikimr::NMiniKQL::IFunctionRegistry* functionRegistry,
     const NYql::NDq::TComputeRuntimeSettings& settings, const NYql::NDq::TComputeMemoryLimits& memoryLimits, NWilson::TTraceId traceId,
     TIntrusivePtr<NActors::TProtoArenaHolder> arena);
 

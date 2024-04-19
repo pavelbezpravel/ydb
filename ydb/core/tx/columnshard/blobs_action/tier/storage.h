@@ -13,13 +13,15 @@ private:
     using TBase = IBlobsStorageOperator;
     const NActors::TActorId TabletActorId;
     std::shared_ptr<TGCInfo> GCInfo = std::make_shared<TGCInfo>();
-
+    std::optional<NKikimrSchemeOp::TS3Settings> CurrentS3Settings;
+    NWrappers::NExternalStorage::IExternalStorageConfig::TPtr InitializationConfig;
     NWrappers::NExternalStorage::IExternalStorageConfig::TPtr ExternalStorageConfig;
     TSpinLock ChangeOperatorLock;
     NWrappers::NExternalStorage::IExternalStorageOperator::TPtr ExternalStorageOperator;
 
     NWrappers::NExternalStorage::IExternalStorageOperator::TPtr GetCurrentOperator() const;
     void InitNewExternalOperator(const NColumnShard::NTiers::TManager* tierManager);
+    void InitNewExternalOperator();
 
     virtual TString DoDebugString() const override {
         return GetCurrentOperator()->DebugString();
@@ -30,10 +32,12 @@ protected:
     virtual std::shared_ptr<IBlobsReadingAction> DoStartReadingAction() override;
     virtual std::shared_ptr<IBlobsGCAction> DoStartGCAction(const std::shared_ptr<TRemoveGCCounters>& counters) const override;
     virtual bool DoLoad(IBlobManagerDb& dbBlobs) override;
-    virtual void DoOnTieringModified(const std::shared_ptr<NColumnShard::TTiersManager>& tiers) override;
+    virtual void DoOnTieringModified(const std::shared_ptr<NColumnShard::ITiersManager>& tiers) override;
 
 public:
     TOperator(const TString& storageId, const NColumnShard::TColumnShard& shard, const std::shared_ptr<NDataSharing::TStorageSharedBlobsManager>& storageSharedBlobsManager);
+    TOperator(const TString& storageId, const TActorId& shardActorId, const std::shared_ptr<NWrappers::IExternalStorageConfig>& storageConfig,
+        const std::shared_ptr<NDataSharing::TStorageSharedBlobsManager>& storageSharedBlobsManager);
 
     virtual TTabletsByBlob GetBlobsToDelete() const override {
         auto result = GCInfo->GetBlobsToDelete();

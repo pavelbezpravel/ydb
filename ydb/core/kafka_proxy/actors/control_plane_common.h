@@ -95,6 +95,20 @@ inline TStringBuilder InputLogMessage(
     return stringBuilder;
 }
 
+inline std::optional<THolder<TEvKafka::TEvTopicModificationResponse>> ValidateTopicConfigName(TString configName) {
+    if (configName == COMPRESSION_TYPE) {
+        auto result = MakeHolder<TEvKafka::TEvTopicModificationResponse>();
+        result->Status = EKafkaErrors::INVALID_REQUEST;
+        result->Message = TStringBuilder()
+            << "Topic-level config '"
+            << COMPRESSION_TYPE
+            << "' is not allowed.";
+        return result;
+    } else {
+        return std::optional<THolder<TEvKafka::TEvTopicModificationResponse>>();
+    }
+} 
+
 template<class T>
 inline std::unordered_set<TString> ExtractDuplicates(
         std::vector<T>& source,
@@ -333,14 +347,6 @@ public:
             const google::protobuf::RepeatedPtrField<NKikimr::NGRpcService::TYdbIssueMessageType>& message) override {
 
         Y_UNUSED(result);
-        Y_UNUSED(message);
-        ProcessYdbStatusCode(status);
-    };
-
-    void SendResult(
-            Ydb::StatusIds::StatusCode status,
-            const google::protobuf::RepeatedPtrField<NKikimr::NGRpcService::TYdbIssueMessageType>& message) override {
-
         Y_UNUSED(message);
         ProcessYdbStatusCode(status);
     };

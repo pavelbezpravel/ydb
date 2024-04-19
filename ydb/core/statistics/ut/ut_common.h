@@ -56,5 +56,12 @@ private:
     THolder<NYdb::TDriver> Driver;
 };
 
+void CreateDatabase(TTestEnv& env, const TString& databaseName, size_t nodeCount = 1);
+
+void CreateServerlessDatabase(TTestEnv& env, const TString& databaseName, TPathId resourcesDomainKey);
+
+TPathId ResolvePathId(TTestActorRuntime& runtime, const TString& path,
+    TPathId* domainKey = nullptr, ui64* tabletId = nullptr);
+
 } // namespace NStat
 } // namespace NKikimr

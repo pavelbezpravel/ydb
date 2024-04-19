@@ -10,6 +10,7 @@ RECURSE(
     ip_base
     json
     json2
+    knn
     math
     pire
     protobuf

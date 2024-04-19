@@ -1131,7 +1131,7 @@ class StaticConfigGenerator(object):
             return selectors_pb
 
         def get_sampling_scope(sampling):
-            sampling_scope_pb = config_pb2.TTracingConfig.TSamplingScope()
+            sampling_scope_pb = config_pb2.TTracingConfig.TSamplingRule()
             selectors = sampling.get("scope")
             if selectors is not None:
                 sampling_scope_pb.Scope.CopyFrom(get_selectors(selectors))
@@ -1142,7 +1142,7 @@ class StaticConfigGenerator(object):
             return sampling_scope_pb
 
         def get_external_throttling(throttling):
-            throttling_scope_pb = config_pb2.TTracingConfig.TExternalThrottlingScope()
+            throttling_scope_pb = config_pb2.TTracingConfig.TExternalThrottlingRule()
             selectors = throttling.get("scope")
             if selectors is not None:
                 throttling_scope_pb.Scope.CopyFrom(get_selectors(selectors))
@@ -1162,7 +1162,8 @@ class StaticConfigGenerator(object):
                     tvm_pb.Port = tvm["port"]
                 tvm_pb.SelfTvmId = tvm["self_tvm_id"]
                 tvm_pb.TracingTvmId = tvm["tracing_tvm_id"]
-                tvm_pb.DiskCacheDir = tvm["disk_cache_dir"]
+                if "disk_cache_dir" in tvm:
+                    tvm_pb.DiskCacheDir = tvm["disk_cache_dir"]
 
                 if "plain_text_secret" in tvm:
                     tvm_pb.PlainTextSecret = tvm["plain_text_secret"]

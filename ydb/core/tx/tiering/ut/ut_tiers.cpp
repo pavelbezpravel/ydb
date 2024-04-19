@@ -28,6 +28,21 @@ using namespace NColumnShard;
 
 class TFastTTLCompactionController: public NKikimr::NYDBTest::ICSController {
 public:
+    virtual bool NeedForceCompactionBacketsConstruction() const override {
+        return true;
+    }
+    virtual TDuration GetRemovedPortionLivetime(const TDuration /*def*/) const override {
+        return TDuration::Zero();
+    }
+    virtual ui64 GetSmallPortionSizeDetector(const ui64 /*def*/) const override {
+        return 0;
+    }
+    virtual TDuration GetOptimizerFreshnessCheckDuration(const TDuration /*defaultValue*/) const override {
+        return TDuration::Zero();
+    }
+    virtual TDuration GetLagForCompactionBeforeTierings(const TDuration /*def*/) const override {
+        return TDuration::Zero();
+    }
     virtual TDuration GetTTLDefaultWaitingDuration(const TDuration /*defaultValue*/) const override {
         return TDuration::Seconds(1);
     }
@@ -320,8 +335,7 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
         serverSettings.GrpcPort = grpcPort;
         serverSettings.SetDomainName("Root")
             .SetUseRealThreads(false)
-            .SetEnableMetadataProvider(true)
-            .SetForceColumnTablesCompositeMarks(true);
+            .SetEnableMetadataProvider(true);
         ;
 
         Tests::TServer::TPtr server = new Tests::TServer(serverSettings);
@@ -410,7 +424,6 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
         serverSettings.SetDomainName("Root")
             .SetUseRealThreads(false)
             .SetEnableMetadataProvider(true)
-            .SetForceColumnTablesCompositeMarks(true)
             .SetAppConfig(appConfig);
 
         Tests::TServer::TPtr server = new Tests::TServer(serverSettings);
@@ -542,7 +555,6 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
             .SetUseRealThreads(false)
             .SetEnableMetadataProvider(true)
             .SetEnableBackgroundTasks(true)
-            .SetForceColumnTablesCompositeMarks(true);
         ;
 
         Tests::TServer::TPtr server = new Tests::TServer(serverSettings);
@@ -563,11 +575,12 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
         //        runtime.SetLogPriority(NKikimrServices::TX_PROXY_SCHEME_CACHE, NLog::PRI_DEBUG);
 
         TLocalHelper lHelper(*server);
+        lHelper.SetOptionalStorageId("__DEFAULT");
         lHelper.StartSchemaRequest("CREATE OBJECT secretAccessKey ( "
             "TYPE SECRET) WITH (value = ak)");
         lHelper.StartSchemaRequest("CREATE OBJECT secretSecretKey ( "
-            "TYPE SECRET) WITH (value = sk)");
-        Singleton<NKikimr::NWrappers::NExternalStorage::TFakeExternalStorage>()->SetSecretKey("sk");
+            "TYPE SECRET) WITH (value = fakeSecret)");
+        Singleton<NKikimr::NWrappers::NExternalStorage::TFakeExternalStorage>()->SetSecretKey("fakeSecret");
 
         lHelper.StartSchemaRequest("CREATE OBJECT tier1 ( "
             "TYPE TIER) WITH (tierConfig = `" + TierConfigProtoStr + "`)");
@@ -626,9 +639,7 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
             }
             UNIT_ASSERT(check);
         }
-#ifdef S3_TEST_USAGE
         Cerr << "storage initialized..." << Endl;
-#endif
 /*
         lHelper.DropTable("/Root/olapStore/olapTable");
         lHelper.StartDataRequest("DELETE FROM `/Root/olapStore/olapTable`");
@@ -851,7 +862,6 @@ Y_UNIT_TEST_SUITE(ColumnShardTiers) {
             .SetUseRealThreads(false)
             .SetEnableMetadataProvider(true)
             .SetEnableBackgroundTasks(true)
-            .SetForceColumnTablesCompositeMarks(true);
         ;
 
         Tests::TServer::TPtr server = new Tests::TServer(serverSettings);

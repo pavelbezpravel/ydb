@@ -1405,11 +1405,15 @@ bool TSqlTranslation::FillFamilySettings(const TRule_family_settings& settingsNo
 
 
 
-bool TSqlTranslation::CreateTableEntry(const TRule_create_table_entry& node, TCreateTableParameters& params)
+bool TSqlTranslation::CreateTableEntry(const TRule_create_table_entry& node, TCreateTableParameters& params, const bool isCreateTableAs)
 {
     switch (node.Alt_case()) {
         case TRule_create_table_entry::kAltCreateTableEntry1:
         {
+            if (isCreateTableAs) {
+                Ctx.Error() << "Column types are not supported for CREATE TABLE AS";
+                return false;
+            }
             // column_schema
             auto columnSchema = ColumnSchemaImpl(node.GetAlt_create_table_entry1().GetRule_column_schema1());
             if (!columnSchema) {
@@ -1509,6 +1513,10 @@ bool TSqlTranslation::CreateTableEntry(const TRule_create_table_entry& node, TCr
         }
         case TRule_create_table_entry::kAltCreateTableEntry4:
         {
+            if (isCreateTableAs) {
+                Ctx.Error() << "Column families are not supported for CREATE TABLE AS";
+                return false;
+            }
             // family_entry
             auto& family_entry = node.GetAlt_create_table_entry4().GetRule_family_entry1();
             TFamilyEntry family(IdEx(family_entry.GetRule_an_id2(), *this));
@@ -1526,6 +1534,19 @@ bool TSqlTranslation::CreateTableEntry(const TRule_create_table_entry& node, TCr
             if (!CreateChangefeed(changefeed, expr, params.Changefeeds)) {
                 return false;
             }
+            break;
+        }
+        case TRule_create_table_entry::kAltCreateTableEntry6:
+        {
+            if (!isCreateTableAs) {
+                Ctx.Error() << "Column requires a type";
+                return false;
+            }
+            // an_id_schema
+            const TString name(Id(node.GetAlt_create_table_entry6().GetRule_an_id_schema1(), *this));
+            const TPosition pos(Context().Pos());
+
+            params.Columns.push_back(TColumnSchema(pos, name, nullptr, true, {}, false, nullptr));
             break;
         }
         default:
@@ -3397,10 +3418,7 @@ bool TSqlTranslation::SortSpecification(const TRule_sort_specification& node, TV
     } else {
         Ctx.IncrementMonCounter("sql_features", "OrderByDefault");
     }
-    auto sortSpecPtr = MakeIntrusive<TSortSpecification>();
-    sortSpecPtr->OrderExpr = exprNode;
-    sortSpecPtr->Ascending = asc;
-    sortSpecs.emplace_back(sortSpecPtr);
+    sortSpecs.emplace_back(MakeIntrusive<TSortSpecification>(exprNode, asc));
     return true;
 }
 
@@ -4432,14 +4450,16 @@ bool TSqlTranslation::ValidateAuthMethod(const std::map<TString, TDeferredAtom>&
         "password_secret_name",
         "aws_access_key_id_secret_name",
         "aws_secret_access_key_secret_name",
-        "aws_region"
+        "aws_region",
+        "token_secret_name"
     };
     const static TMap<TStringBuf, TSet<TStringBuf>> authMethodFields{
         {"NONE", {}},
         {"SERVICE_ACCOUNT", {"service_account_id", "service_account_secret_name"}},
         {"BASIC", {"login", "password_secret_name"}},
         {"AWS", {"aws_access_key_id_secret_name", "aws_secret_access_key_secret_name", "aws_region"}},
-        {"MDB_BASIC", {"service_account_id", "service_account_secret_name", "login", "password_secret_name"}}
+        {"MDB_BASIC", {"service_account_id", "service_account_secret_name", "login", "password_secret_name"}},
+        {"TOKEN", {"token_secret_name"}}
     };
     auto authMethodIt = result.find("auth_method");
     if (authMethodIt == result.end() || authMethodIt->second.GetLiteral() == nullptr) {
@@ -4527,6 +4547,69 @@ bool TSqlTranslation::ParseViewQuery(std::map<TString, TDeferredAtom>& features,
     features["query_ast"] = {viewSelect, Ctx};
 
     return true;
+}
+
+class TReturningListColumns : public INode {
+public:
+    TReturningListColumns(TPosition pos)
+        : INode(pos)
+    {
+    }
+
+    TReturningListColumns(TPosition pos, TNodePtr)
+        :INode(pos)
+    {
+    }
+
+    void SetStar() {
+        ColumnNames.clear();
+        Star = true;
+    }
+
+    void AddColumn(const NSQLv1Generated::TRule_an_id & rule, TTranslation& ctx) {
+        ColumnNames.push_back(NSQLTranslationV1::Id(rule, ctx));
+    }
+    
+    bool DoInit(TContext& ctx, ISource* source) override {
+        Node = Y();
+        if (Star) {
+            Node->Add(Y("ReturningStar"));
+        } else {
+            for (auto&& column : ColumnNames) {
+                Node->Add(Y("ReturningListItem", Q(column)));
+            }
+        }
+        Node = Q(Y(Q("returning"), Q(Node)));
+        return Node->Init(ctx, source);
+    }
+
+    TNodePtr DoClone() const override {
+        return new TReturningListColumns(Pos, Node->Clone());
+    }
+
+    TAstNode* Translate(TContext& ctx) const override {
+        return Node->Translate(ctx);
+    }
+
+private:
+    TNodePtr Node;
+    TVector<TString> ColumnNames;
+    bool Star = false;
+};
+
+TNodePtr TSqlTranslation::ReturningList(const ::NSQLv1Generated::TRule_returning_columns_list& columns) {
+    auto result = MakeHolder<TReturningListColumns>(Ctx.Pos());
+
+    if (columns.GetBlock2().Alt_case() == TRule_returning_columns_list_TBlock2::AltCase::kAlt1) {
+        result->SetStar();
+    } else if (columns.GetBlock2().Alt_case() == TRule_returning_columns_list_TBlock2::AltCase::kAlt2) {
+        result->AddColumn(columns.GetBlock2().alt2().GetRule_an_id1(), *this);
+        for (auto& block : columns.GetBlock2().alt2().GetBlock2()) {
+            result->AddColumn(block.GetRule_an_id2(), *this);
+        }
+    }
+
+    return result.Release();
 }
 
 } // namespace NSQLTranslationV1

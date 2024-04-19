@@ -60,6 +60,14 @@ public:
         }
     }
 
+    explicit TEnv(const TString& builtin)
+        : TEnv(false)
+    {
+        UNIT_ASSERT_STRING_CONTAINS(builtin, "@builtin");
+        Init(builtin);
+        Client.ModifyOwner("/", DomainName, builtin);
+    }
+
     explicit TEnv(const TString& user, const TString& password)
         : TEnv(false)
     {
@@ -119,6 +127,10 @@ public:
 
         const auto& self = desc.GetPathDescription().GetSelf();
         return TPathId(self.GetSchemeshardId(), self.GetPathId());
+    }
+
+    ui64 GetSchemeshardId(const TString& path) {
+        return GetPathId(path).OwnerId;
     }
 
     template <typename... Args>

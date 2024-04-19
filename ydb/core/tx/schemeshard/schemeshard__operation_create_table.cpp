@@ -3,6 +3,7 @@
 #include "schemeshard_impl.h"
 
 #include <ydb/core/protos/flat_scheme_op.pb.h>
+#include <ydb/core/protos/datashard_config.pb.h>
 
 #include <ydb/core/base/subdomain.h>
 
@@ -647,6 +648,10 @@ public:
         if (schema.HasTemporary() && schema.GetTemporary()) {
             tableInfo->IsTemporary = true;
             tableInfo->OwnerActorId = ActorIdFromProto(Transaction.GetTempTableOwnerActorId());
+        }
+
+        if (tableInfo->IsAsyncReplica()) {
+            newTable->SetAsyncReplica();
         }
 
         context.SS->Tables[newTable->PathId] = tableInfo;

@@ -24,6 +24,12 @@ void PrepareTables(TSession session) {
             PRIMARY KEY (Key)
         );
 
+        CREATE TABLE `/Root/Kv` (
+            Key Int32,
+            Value String,
+            PRIMARY KEY (Key)
+        );
+
         CREATE TABLE `/Root/LaunchByProcessIdAndPinned` (
             idx_processId Utf8,
             idx_pinned Bool,
@@ -63,6 +69,12 @@ void PrepareTables(TSession session) {
             (103, "Value23"),
             (NULL, "Value24"),
             (104, NULL);
+
+        REPLACE INTO `/Root/Kv` (Key, Value) VALUES
+            (1, "Value1"),
+            (2, "Value2"),
+            (3, "Value3"),
+            (4, "Value4");    
 
         REPLACE INTO `/Root/LaunchByProcessIdAndPinned` (idx_processId, idx_pinned, idx_launchNumber) VALUES
             ("eProcess", false, 4),
@@ -190,6 +202,41 @@ Y_UNIT_TEST_TWIN(Inner, StreamLookup) {
         ])", 2, StreamLookup);
 }
 
+Y_UNIT_TEST_TWIN(JoinWithSubquery, StreamLookup) {
+    const auto query = R"(
+        $join = (SELECT l.Key AS lKey, l.Value AS lValue, r.Value AS rValue
+            FROM `/Root/Left` AS l
+            INNER JOIN `/Root/Right` AS r
+                ON l.Fk = r.Key
+        );
+        SELECT j.lValue AS Value FROM $join AS j INNER JOIN `/Root/Kv` AS kv
+            ON j.lKey = kv.Key;
+    )";
+
+    NKikimrConfig::TAppConfig appConfig;
+    appConfig.MutableTableServiceConfig()->SetEnableKqpDataQueryStreamIdxLookupJoin(StreamLookup);
+
+    auto settings = TKikimrSettings().SetAppConfig(appConfig);
+    TKikimrRunner kikimr(settings);
+    auto db = kikimr.GetTableClient();
+    auto session = db.CreateSession().GetValueSync().GetSession();
+
+    PrepareTables(session);
+
+    TExecDataQuerySettings execSettings;
+    execSettings.CollectQueryStats(ECollectQueryStatsMode::Profile);
+
+    auto result = session.ExecuteDataQuery(Q_(query), TTxControl::BeginTx().CommitTx(), execSettings).ExtractValueSync();
+    UNIT_ASSERT_C(result.IsSuccess(), result.GetIssues().ToString());
+
+    CompareYson(R"([
+        [["Value1"]];
+        [["Value1"]];
+        [["Value2"]];
+        [["Value2"]]
+    ])", FormatResultSetYson(result.GetResultSet(0)));
+}
+
 Y_UNIT_TEST_TWIN(Left, StreamLookup) {
     Test(
         R"(
@@ -234,6 +281,7 @@ Y_UNIT_TEST(LeftSemi) {
             LEFT SEMI JOIN `/Root/Right` AS r
                ON l.Fk = r.Key
             WHERE l.Value != 'Value1'   -- left table payload filter
+            ORDER BY l.Key
         )",
         R"([
             [[3];[103];["Value2"]];
@@ -507,26 +555,32 @@ TString GetQuery(const TString& joinType, const TString& leftTable, const TStrin
     using namespace fmt::literals;
 
     TString selectColumns;
+    TString sortColumns;
     if (joinType == "RIGHT SEMI") {
         selectColumns = "r.Key, r.Value";
+        sortColumns = "r.Key";
     } else if (joinType == "LEFT SEMI") {
         selectColumns = "l.Key, l.Value";
+        sortColumns = "l.Key";
     } else if (joinType == "LEFT ONLY") {
         selectColumns = "l.Key, l.Value";
+        sortColumns = "l.Key";
     } else {
         selectColumns = "l.Key, l.Value, r.Key, r.Value";
+        sortColumns = "l.Key";
     }
 
     return fmt::format(R"(
             SELECT {selectColumns}
             FROM `/Root/Table{leftTable}` AS l
             {joinType} JOIN `/Root/Table{rightTable}` AS r
-                ON l.Key = r.Key
+                ON l.Key = r.Key ORDER BY {sortColumns}
         )",
         "selectColumns"_a = selectColumns,
         "leftTable"_a = leftTable,
         "rightTable"_a = rightTable,
-        "joinType"_a = joinType
+        "joinType"_a = joinType,
+        "sortColumns"_a = sortColumns
     );
 }
 

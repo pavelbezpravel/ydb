@@ -49,6 +49,7 @@
 #include <ydb/core/protos/tx_datashard.pb.h>
 #include <ydb/core/protos/subdomains.pb.h>
 #include <ydb/core/protos/counters_datashard.pb.h>
+#include <ydb/core/protos/table_stats.pb.h>
 
 #include <ydb/public/api/protos/ydb_status_codes.pb.h>
 
@@ -246,6 +247,9 @@ class TDataShard
 
     class TTxHandleSafeKqpScan;
     class TTxHandleSafeBuildIndexScan;
+    class TTxHandleSafeStatisticsScan;
+
+    class TTxMediatorStateRestored;
 
     ITransaction *CreateTxMonitoring(TDataShard *self,
                                      NMon::TEvRemoteHttpInfo::TPtr ev);
@@ -328,6 +332,7 @@ class TDataShard
 
     class TWaitVolatileDependencies;
     class TSendVolatileResult;
+    class TSendVolatileWriteResult;
 
     struct TEvPrivate {
         enum EEv {
@@ -362,6 +367,7 @@ class TDataShard
             EvConfirmReadonlyLease,
             EvReadonlyLeaseConfirmation,
             EvPlanPredictedTxs,
+            EvStatisticsScanFinished,
             EvEnd
         };
 
@@ -529,6 +535,7 @@ class TDataShard
             const TRowVersion ReadVersion;
             const TVector<ui32> ValueTags;
             TVector<std::pair<TSerializedCellVec, TSerializedCellVec>> Rows;
+            ui64 ReservationCookie = 0;
             const TCdcStreamScanManager::TStats Stats;
         };
 
@@ -557,6 +564,8 @@ class TDataShard
         struct TEvReadonlyLeaseConfirmation: public TEventLocal<TEvReadonlyLeaseConfirmation, EvReadonlyLeaseConfirmation> {};
 
         struct TEvPlanPredictedTxs : public TEventLocal<TEvPlanPredictedTxs, EvPlanPredictedTxs> {};
+
+        struct TEvStatisticsScanFinished : public TEventLocal<TEvStatisticsScanFinished, EvStatisticsScanFinished> {};
     };
 
     struct Schema : NIceDb::Schema {
@@ -1282,6 +1291,9 @@ class TDataShard
     void Handle(TEvPrivate::TEvCdcStreamScanProgress::TPtr& ev, const TActorContext& ctx);
     void Handle(TEvPrivate::TEvAsyncJobComplete::TPtr& ev, const TActorContext& ctx);
     void Handle(TEvPrivate::TEvRestartOperation::TPtr& ev, const TActorContext& ctx);
+    void Handle(TEvDataShard::TEvStatisticsScanRequest::TPtr& ev, const TActorContext& ctx);
+    void HandleSafe(TEvDataShard::TEvStatisticsScanRequest::TPtr& ev, const TActorContext& ctx);
+    void Handle(TEvPrivate::TEvStatisticsScanFinished::TPtr& ev, const TActorContext& ctx);
 
     void Handle(TEvDataShard::TEvCancelBackup::TPtr &ev, const TActorContext &ctx);
     void Handle(TEvDataShard::TEvCancelRestore::TPtr &ev, const TActorContext &ctx);
@@ -1709,6 +1721,21 @@ public:
     void NotifyOverloadSubscribers(ERejectReason reason);
     void NotifyAllOverloadSubscribers();
 
+    template <typename TResponseRecord>
+    void SetOverloadSubscribed(const std::optional<ui64>& overloadSubscribe, const TActorId& recipient, const TActorId& sender, const ERejectReasons rejectReasons, TResponseRecord& responseRecord) {
+        if (overloadSubscribe && HasPipeServer(recipient)) {
+            ui64 seqNo = overloadSubscribe.value();
+            auto allowed = (ERejectReasons::OverloadByProbability | ERejectReasons::YellowChannels | ERejectReasons::ChangesQueueOverflow);
+            if ((rejectReasons & allowed) != ERejectReasons::None &&
+                (rejectReasons - allowed) == ERejectReasons::None)
+            {
+                if (AddOverloadSubscriber(recipient, sender, seqNo, rejectReasons)) {
+                    responseRecord.SetOverloadSubscribed(seqNo);
+                }
+            }
+        }
+    }
+
     bool HasSharedBlobs() const;
     void CheckInitiateBorrowedPartsReturn(const TActorContext& ctx);
     void CheckStateChange(const TActorContext& ctx);
@@ -1833,7 +1860,9 @@ public:
     void MoveChangeRecord(NIceDb::TNiceDb& db, ui64 order, const TPathId& pathId);
     void MoveChangeRecord(NIceDb::TNiceDb& db, ui64 lockId, ui64 lockOffset, const TPathId& pathId);
     void RemoveChangeRecord(NIceDb::TNiceDb& db, ui64 order);
-    void EnqueueChangeRecords(TVector<IDataShardChangeCollector::TChange>&& records);
+    void EnqueueChangeRecords(TVector<IDataShardChangeCollector::TChange>&& records, ui64 cookie = 0);
+    ui32 GetFreeChangeQueueCapacity(ui64 cookie);
+    ui64 ReserveChangeQueueCapacity(ui32 capacity);
     void UpdateChangeExchangeLag(TInstant now);
     void CreateChangeSender(const TActorContext& ctx);
     void KillChangeSender(const TActorContext& ctx);
@@ -1945,6 +1974,7 @@ public:
     void SendAfterMediatorStepActivate(ui64 mediatorStep, const TActorContext& ctx);
 
     void CheckMediatorStateRestored();
+    void FinishMediatorStateRestore(TTransactionContext&, ui64, ui64);
 
     void FillExecutionStats(const TExecutionProfile& execProfile, NKikimrQueryStats::TTxStats& txStats) const;
 
@@ -1971,8 +2001,8 @@ public:
     void WaitPredictedPlanStep(ui64 step);
     void SchedulePlanPredictedTxs();
 
-    bool CheckChangesQueueOverflow() const;
-    void CheckChangesQueueNoOverflow();
+    bool CheckChangesQueueOverflow(ui64 cookie = 0) const;
+    void CheckChangesQueueNoOverflow(ui64 cookie = 0);
 
     void DeleteReadIterator(TReadIteratorsMap::iterator it);
     void CancelReadIterators(Ydb::StatusIds::StatusCode code, const TString& issue, const TActorContext& ctx);
@@ -2609,7 +2639,7 @@ private:
 
     TVector<THolder<IEventHandle>> MediatorStateWaitingMsgs;
     bool MediatorStateWaiting = false;
-    bool MediatorStateBackupInitiated = false;
+    bool MediatorStateRestoreTxPending = false;
 
     bool IcbRegistered = false;
 
@@ -2702,9 +2732,11 @@ private:
         TInstant EnqueuedAt;
         ui64 LockId;
         ui64 LockOffset;
+        ui64 ReservationCookie;
 
         explicit TEnqueuedRecord(ui64 bodySize, const TPathId& tableId,
-                ui64 schemaVersion, TInstant created, TInstant enqueued, ui64 lockId = 0, ui64 lockOffset = 0)
+                ui64 schemaVersion, TInstant created, TInstant enqueued,
+                ui64 lockId = 0, ui64 lockOffset = 0, ui64 cookie = 0)
             : BodySize(bodySize)
             , TableId(tableId)
             , SchemaVersion(schemaVersion)
@@ -2713,12 +2745,13 @@ private:
             , EnqueuedAt(enqueued)
             , LockId(lockId)
             , LockOffset(lockOffset)
+            , ReservationCookie(cookie)
         {
         }
 
-        explicit TEnqueuedRecord(const IDataShardChangeCollector::TChange& record, TInstant now)
+        explicit TEnqueuedRecord(const IDataShardChangeCollector::TChange& record, TInstant now, ui64 cookie)
             : TEnqueuedRecord(record.BodySize, record.TableId, record.SchemaVersion, record.CreatedAt(), now,
-                record.LockId, record.LockOffset)
+                record.LockId, record.LockOffset, cookie)
         {
         }
     };
@@ -2738,6 +2771,9 @@ private:
     THashMap<ui64, TEnqueuedRecord> ChangesQueue; // ui64 is order
     TIntrusiveList<TEnqueuedRecord, TEnqueuedRecordTag> ChangesList;
     ui64 ChangesQueueBytes = 0;
+    THashMap<ui64, ui32> ChangeQueueReservations;
+    ui64 NextChangeQueueReservationCookie = 1;
+    ui32 ChangeQueueReservedCapacity = 0;
     TActorId OutChangeSender;
     bool OutChangeSenderSuspended = false;
 
@@ -2780,10 +2816,19 @@ private:
     // from the front
     THashMap<ui32, TCompactionWaiterList> CompactionWaiters;
 
-    using TCompactBorrowedWaiterList = TList<TActorId>;
+    struct TCompactBorrowedWaiter : public TThrRefBase {
+        TCompactBorrowedWaiter(TActorId actorId, TLocalPathId requestedTable)
+            : ActorId(actorId)
+            , RequestedTable(requestedTable)
+        { }
+
+        TActorId ActorId;
+        TLocalPathId RequestedTable;
+        THashSet<ui32> CompactingTables;
+    };
 
     // tableLocalTid -> waiters, similar to CompactionWaiters
-    THashMap<ui32, TCompactBorrowedWaiterList> CompactBorrowedWaiters;
+    THashMap<ui32, TList<TIntrusivePtr<TCompactBorrowedWaiter>>> CompactBorrowedWaiters;
 
     struct TReplicationSourceOffsetsReceiveState {
         // A set of tables for which we already received offsets
@@ -2816,6 +2861,10 @@ private:
     TVector<THolder<IEventHandle>> DelayedS3UploadRows;
 
     std::vector<TTrivialLogThrottler> LogThrottlers = {ELogThrottlerType::LAST, TDuration::Seconds(1)};
+
+    ui32 StatisticsScanTableId = 0;
+    ui64 StatisticsScanId = 0;
+
 public:
     auto& GetLockChangeRecords() {
         return LockChangeRecords;
@@ -2989,6 +3038,8 @@ protected:
             HFuncTraced(TEvPrivate::TEvRemoveLockChangeRecords, Handle);
             HFunc(TEvPrivate::TEvConfirmReadonlyLease, Handle);
             HFunc(TEvPrivate::TEvPlanPredictedTxs, Handle);
+            HFunc(TEvDataShard::TEvStatisticsScanRequest, Handle);
+            HFunc(TEvPrivate::TEvStatisticsScanFinished, Handle);
             default:
                 if (!HandleDefaultEvents(ev, SelfId())) {
                     ALOG_WARN(NKikimrServices::TX_DATASHARD, "TDataShard::StateWork unhandled event type: " << ev->GetTypeRewrite() << " event: " << ev->ToString());

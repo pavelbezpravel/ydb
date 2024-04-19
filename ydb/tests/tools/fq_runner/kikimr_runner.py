@@ -39,6 +39,7 @@ class BaseTenant(abc.ABC):
             port_allocator,  # KikimrPortManagerPortAllocator
             config_generator  # KikimrConfigGenerator
     ):
+        self.bootstraped_nodes = set()
         self.node_count = node_count
         self.tenant_name = tenant_name
         self.port_allocator = port_allocator
@@ -173,6 +174,13 @@ class BaseTenant(abc.ABC):
                     result.append(metering["usage"]["quantity"])
         return result
 
+    def drop_metering(self, node_index=None):
+        if node_index is None:
+            for n in self.kikimr_cluster.nodes:
+                self.drop_metering(n)
+        else:
+            open(self.kikimr_cluster.nodes[node_index].cwd + "/metering.bill", "w").close()
+
     def get_sensors(self, node_index, counters):
         url = self.monitoring_endpoint(node_index=node_index) + "/counters/counters={}/json".format(counters)
         return load_metrics(url)
@@ -233,6 +241,12 @@ class BaseTenant(abc.ABC):
         )
         return result if result is not None else 0
 
+    def ensure_is_alive(self):
+        for n in self.kikimr_cluster.nodes:
+            if n not in self.bootstraped_nodes:
+                self.wait_bootstrap(n)
+            assert self.get_actor_count(n, "GRPC_PROXY") > 0, "Node {} died".format(n)
+
     def wait_bootstrap(self, node_index=None, wait_time=yatest_common.plain_or_under_sanitizer(90, 400)):
         if node_index is None:
             for n in self.kikimr_cluster.nodes:
@@ -249,6 +263,7 @@ class BaseTenant(abc.ABC):
                     time.sleep(yatest_common.plain_or_under_sanitizer(0.3, 2))
                     continue
                 break
+            self.bootstraped_nodes.add(node_index)
             logging.debug("Node {} has been bootstrapped".format(node_index))
 
     def wait_discovery(self, node_index=None, wait_time=yatest_common.plain_or_under_sanitizer(30, 150)):

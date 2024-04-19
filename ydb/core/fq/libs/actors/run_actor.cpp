@@ -30,7 +30,6 @@
 #include <ydb/library/yql/providers/pq/proto/dq_io.pb.h>
 #include <ydb/library/yql/providers/pq/task_meta/task_meta.h>
 #include <ydb/library/yql/providers/s3/provider/yql_s3_provider.h>
-#include <ydb/library/yql/providers/ydb/provider/yql_ydb_provider.h>
 #include <ydb/library/yql/providers/solomon/gateway/yql_solomon_gateway.h>
 #include <ydb/library/yql/providers/solomon/provider/yql_solomon_provider.h>
 #include <ydb/library/yql/providers/s3/actors/yql_s3_applicator_actor.h>
@@ -923,21 +922,6 @@ private:
             EvalInfos.emplace(info.ExecuterId, info);
         } else {
             DqGraphParams.push_back(ev->Get()->GraphParams);
-
-            NYql::IDqGateway::TResult gatewayResult;
-            // fake it till you make it
-            // generate dummy result for YQL facade now, remove this gateway completely
-            // when top-level YQL facade call like Preprocess() is implemented
-            if (ev->Get()->GraphParams.GetResultType()) {
-                // for resultable graphs return dummy "select 1" result (it is not used and is required to satisfy YQL facade only)
-                gatewayResult.SetSuccess();
-                gatewayResult.Data = "[[\001\0021]]";
-                gatewayResult.Truncated = true;
-                gatewayResult.RowsCount = 0;
-            } else {
-                // for resultless results expect infinite INSERT FROM SELECT and just return "nothing"
-            }
-            ev->Get()->Result.SetValue(gatewayResult);
         }
     }
 
@@ -1940,11 +1924,7 @@ private:
         }
 
         {
-           dataProvidersInit.push_back(GetYdbDataProviderInitializer(Params.YqSharedResources->UserSpaceYdbDriver, Params.CredentialsFactory, dbResolver));
-        }
-
-        {
-           dataProvidersInit.push_back(GetGenericDataProviderInitializer(Params.ConnectorClient, dbResolver));
+           dataProvidersInit.push_back(GetGenericDataProviderInitializer(Params.ConnectorClient, dbResolver, Params.CredentialsFactory));
         }
 
         {

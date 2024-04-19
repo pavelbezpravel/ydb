@@ -60,6 +60,12 @@ void Print(const TBuffer& buffer) {
     Cerr << ">>>>> Packet sent: " << sb << Endl;
 }
 
+struct TReadInfo {
+    std::vector<TConsumerProtocolAssignment::TopicPartition> Partitions;
+    TString MemberId;
+    i32 GenerationId;
+};
+
 template <class TKikimr, bool secure>
 class TTestServer {
 public:
@@ -268,6 +274,23 @@ void AssertMessageMeta(const NYdb::NTopic::TReadSessionEvent::TDataReceivedEvent
     UNIT_ASSERT_C(false, "Field " << field << " not found in message meta");
 }
 
+void AssertPartitionsIsUniqueAndCountIsExpected(std::vector<TReadInfo> readInfos, ui32 expectedPartitionsCount, TString topic) {
+    std::unordered_set<int> partitions;
+    ui32 partitionsCount = 0;
+    for (TReadInfo readInfo: readInfos) {
+        for (auto topicPartitions: readInfo.Partitions) {
+            if (topicPartitions.Topic == topic) {
+                for (auto partition: topicPartitions.Partitions) {
+                    partitions.emplace(partition);
+                    partitionsCount++;
+                }
+            }
+        }
+    }
+    UNIT_ASSERT_VALUES_EQUAL(partitionsCount, expectedPartitionsCount);
+    UNIT_ASSERT_VALUES_EQUAL(partitions.size(), expectedPartitionsCount);
+}
+
 std::vector<NTopic::TReadSessionEvent::TDataReceivedEvent> Read(std::shared_ptr<NYdb::NTopic::IReadSession> reader) {
     std::vector<NTopic::TReadSessionEvent::TDataReceivedEvent> result;
     while (true) {
@@ -290,15 +313,19 @@ std::vector<NTopic::TReadSessionEvent::TDataReceivedEvent> Read(std::shared_ptr<
 }
 
 struct TTopicConfig {
+    inline static const std::map<TString, TString> DummyMap;
+
     TTopicConfig(
             TString name,
             ui32 partionsNumber,
             std::optional<TString> retentionMs = std::nullopt,
-            std::optional<TString> retentionBytes = std::nullopt)
+            std::optional<TString> retentionBytes = std::nullopt,
+            const std::map<TString, TString>& configs = DummyMap)
         : Name(name)
         , PartitionsNumber(partionsNumber)
         , RetentionMs(retentionMs)
         , RetentionBytes(retentionBytes)
+        , Configs(configs)
     {
     }
 
@@ -306,6 +333,7 @@ struct TTopicConfig {
     ui32 PartitionsNumber;
     std::optional<TString> RetentionMs;
     std::optional<TString> RetentionBytes;
+    std::map<TString, TString> Configs;
 };
 
 class TTestClient {
@@ -482,12 +510,6 @@ public:
         return WriteAndRead<TSyncGroupResponseData>(header, request);
     }
 
-    struct TReadInfo {
-        std::vector<TConsumerProtocolAssignment::TopicPartition> Partitions;
-        TString MemberId;
-        i32 GenerationId;
-    };
-
     TReadInfo JoinAndSyncGroup(std::vector<TString>& topics, TString& groupId, i32 heartbeatTimeout = 1000000) {
         auto joinResponse = JoinGroup(topics, groupId, heartbeatTimeout);
         auto memberId = joinResponse->MemberId;
@@ -634,6 +656,13 @@ public:
             addConfig(topicToCreate.RetentionMs, "retention.ms");
             addConfig(topicToCreate.RetentionBytes, "retention.bytes");
 
+            for (auto const& [name, value] : topicToCreate.Configs) {
+                NKafka::TCreateTopicsRequestData::TCreatableTopic::TCreateableTopicConfig config;
+                config.Name = name;
+                config.Value = value;
+                topic.Configs.push_back(config);
+            }
+
             request.Topics.push_back(topic);
         }
 
@@ -683,6 +712,12 @@ public:
             addConfig(topicToModify.RetentionMs, "retention.ms");
             addConfig(topicToModify.RetentionBytes, "retention.bytes");
 
+            for (auto const& [name, value] : topicToModify.Configs) {
+                NKafka::TAlterConfigsRequestData::TAlterConfigsResource::TAlterableConfig config;
+                config.Name = name;
+                config.Value = value;
+                resource.Configs.push_back(config);
+            }
             request.Resources.push_back(resource);
         }
 
@@ -1184,7 +1219,7 @@ Y_UNIT_TEST_SUITE(KafkaProtocol) {
 
         TString notExistsTopicName = "/Root/not-exists";
 
-        ui64 minActivePartitions = 10;
+        ui64 minActivePartitions = 12;
 
         TString group = "consumer-0";
         TString notExistsGroup = "consumer-not-exists";
@@ -1218,6 +1253,8 @@ Y_UNIT_TEST_SUITE(KafkaProtocol) {
 
         TTestClient clientA(testServer.Port);
         TTestClient clientB(testServer.Port);
+        TTestClient clientC(testServer.Port);
+        TTestClient clientD(testServer.Port);
 
         {
             auto msg = clientA.ApiVersions();
@@ -1254,26 +1291,108 @@ Y_UNIT_TEST_SUITE(KafkaProtocol) {
             auto readInfoB = clientB.JoinAndSyncGroup(topics, group);
             UNIT_ASSERT_VALUES_EQUAL(readInfoB.Partitions.size(), 0);
 
-            // clientA gets RABALANCE status, because of new reader. We need to release some partitions
+            // clientA gets RABALANCE status, because of new reader. We need to release some partitions for new client
             clientA.WaitRebalance(readInfoA.MemberId, readInfoA.GenerationId, group);
 
             // clientA now gets half of partitions
             readInfoA = clientA.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/2);
             UNIT_ASSERT_VALUES_EQUAL(clientA.Heartbeat(readInfoA.MemberId, readInfoA.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
 
-            // some partitions now released, and we can give them to clientB
+            // some partitions now released, and we can give them to clientB. clientB now gets half of partitions
             clientB.WaitRebalance(readInfoB.MemberId, readInfoB.GenerationId, group);
             readInfoB = clientB.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/2);
             UNIT_ASSERT_VALUES_EQUAL(clientB.Heartbeat(readInfoB.MemberId, readInfoB.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
 
-            // cleintA leave group and all partitions goes to clientB
-            UNIT_ASSERT_VALUES_EQUAL(clientA.LeaveGroup(readInfoA.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            AssertPartitionsIsUniqueAndCountIsExpected({readInfoA, readInfoB}, minActivePartitions, topicName);
+
+            // clientC join group, and get 0 partitions, becouse it's all at clientA and clientB
+            UNIT_ASSERT_VALUES_EQUAL(clientC.SaslHandshake()->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            UNIT_ASSERT_VALUES_EQUAL(clientC.SaslAuthenticate("ouruser@/Root", "ourUserPassword")->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            auto readInfoC = clientC.JoinAndSyncGroup(topics, group);
+            UNIT_ASSERT_VALUES_EQUAL(readInfoC.Partitions.size(), 0);
+
+            // all clients gets RABALANCE status, because of new reader. We need to release some partitions for new client
+            clientA.WaitRebalance(readInfoA.MemberId, readInfoA.GenerationId, group);
             clientB.WaitRebalance(readInfoB.MemberId, readInfoB.GenerationId, group);
-            readInfoB = clientB.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions);
+
+            // all clients now gets minActivePartitions/3 partitions
+            readInfoA = clientA.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
+            UNIT_ASSERT_VALUES_EQUAL(clientA.Heartbeat(readInfoA.MemberId, readInfoA.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoB = clientB.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
             UNIT_ASSERT_VALUES_EQUAL(clientB.Heartbeat(readInfoB.MemberId, readInfoB.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
 
-            // clientB leave group
-            UNIT_ASSERT_VALUES_EQUAL(clientB.LeaveGroup(readInfoA.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));              
+            readInfoC = clientC.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
+            UNIT_ASSERT_VALUES_EQUAL(clientC.Heartbeat(readInfoC.MemberId, readInfoC.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            AssertPartitionsIsUniqueAndCountIsExpected({readInfoA, readInfoB, readInfoC}, minActivePartitions, topicName);
+
+            // clientD join group, and get 0 partitions, becouse it's all at clientA, clientB and clientC
+            UNIT_ASSERT_VALUES_EQUAL(clientD.SaslHandshake()->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            UNIT_ASSERT_VALUES_EQUAL(clientD.SaslAuthenticate("ouruser@/Root", "ourUserPassword")->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            auto readInfoD = clientD.JoinAndSyncGroup(topics, group);
+            UNIT_ASSERT_VALUES_EQUAL(readInfoD.Partitions.size(), 0);
+
+            // all clients gets RABALANCE status, because of new reader. We need to release some partitions
+            clientA.WaitRebalance(readInfoA.MemberId, readInfoA.GenerationId, group);
+            clientB.WaitRebalance(readInfoB.MemberId, readInfoB.GenerationId, group);
+            clientC.WaitRebalance(readInfoC.MemberId, readInfoC.GenerationId, group);
+
+            // all clients now gets minActivePartitions/4 partitions
+            readInfoA = clientA.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/4);
+            UNIT_ASSERT_VALUES_EQUAL(clientA.Heartbeat(readInfoA.MemberId, readInfoA.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoB = clientB.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/4);
+            UNIT_ASSERT_VALUES_EQUAL(clientB.Heartbeat(readInfoB.MemberId, readInfoB.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoC = clientC.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/4);
+            UNIT_ASSERT_VALUES_EQUAL(clientC.Heartbeat(readInfoC.MemberId, readInfoC.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoD = clientD.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/4);
+            UNIT_ASSERT_VALUES_EQUAL(clientD.Heartbeat(readInfoD.MemberId, readInfoD.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            AssertPartitionsIsUniqueAndCountIsExpected({readInfoA, readInfoB, readInfoC, readInfoD}, minActivePartitions, topicName);
+
+
+            // cleintA leave group and all partitions goes to clientB, clientB and clientD
+            UNIT_ASSERT_VALUES_EQUAL(clientA.LeaveGroup(readInfoA.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            // all other clients gets RABALANCE status, because one clientA leave group.
+            clientB.WaitRebalance(readInfoB.MemberId, readInfoB.GenerationId, group);
+            clientC.WaitRebalance(readInfoC.MemberId, readInfoC.GenerationId, group);
+            clientD.WaitRebalance(readInfoD.MemberId, readInfoD.GenerationId, group);
+
+            // all other clients now gets minActivePartitions/3 partitions
+            readInfoB = clientB.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
+            UNIT_ASSERT_VALUES_EQUAL(clientB.Heartbeat(readInfoB.MemberId, readInfoB.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoC = clientC.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
+            UNIT_ASSERT_VALUES_EQUAL(clientC.Heartbeat(readInfoC.MemberId, readInfoC.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            readInfoD = clientD.JoinAndSyncGroupAndWaitPartitions(topics, group, minActivePartitions/3);
+            UNIT_ASSERT_VALUES_EQUAL(clientD.Heartbeat(readInfoD.MemberId, readInfoD.GenerationId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+
+            AssertPartitionsIsUniqueAndCountIsExpected({readInfoB, readInfoC, readInfoD}, minActivePartitions, topicName);
+
+
+            // all other clients leaves the group
+            UNIT_ASSERT_VALUES_EQUAL(clientB.LeaveGroup(readInfoB.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            UNIT_ASSERT_VALUES_EQUAL(clientC.LeaveGroup(readInfoC.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            UNIT_ASSERT_VALUES_EQUAL(clientD.LeaveGroup(readInfoD.MemberId, group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));         
+        }
+
+        //release partition before lock
+        {
+            std::vector<TString> topics;
+            topics.push_back(topicName);
+
+            auto readInfoA = clientA.JoinGroup(topics, group);
+            Sleep(TDuration::MilliSeconds(200));
+            auto readInfoB = clientB.JoinGroup(topics, group);
+            Sleep(TDuration::MilliSeconds(200));
+
+            UNIT_ASSERT_VALUES_EQUAL(clientA.LeaveGroup(readInfoA->MemberId.value(), group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
+            UNIT_ASSERT_VALUES_EQUAL(clientB.LeaveGroup(readInfoB->MemberId.value(), group)->ErrorCode, static_cast<TKafkaInt16>(EKafkaErrors::NONE_ERROR));
         }
 
         {
@@ -1778,6 +1897,30 @@ Y_UNIT_TEST_SUITE(KafkaProtocol) {
             UNIT_ASSERT(!result993.IsSuccess());
         }
 
+        {
+            // Legal, but meaningless for Logbroker config
+            std::map<TString, TString> configs { std::make_pair("flush.messages", "1") };
+            auto msg = client.CreateTopics( { TTopicConfig("topic-987-test", 1, std::nullopt, std::nullopt, configs) });
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics.size(), 1);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics[0].Name.value(), "topic-987-test");
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics[0].ErrorCode, NONE_ERROR);
+
+            auto result = pqClient.DescribeTopic("/Root/topic-987-test", describeTopicSettings).GetValueSync();
+            UNIT_ASSERT(result.IsSuccess());
+        }
+
+        {
+            // Both legal and illegal configs
+            std::map<TString, TString> configs { std::make_pair("compression.type", "zstd"), std::make_pair("flush.messages", "1") };
+            auto msg = client.CreateTopics( { TTopicConfig("topic-986-test", 1, std::nullopt, std::nullopt, configs) });
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics.size(), 1);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics[0].Name.value(), "topic-986-test");
+            UNIT_ASSERT_VALUES_EQUAL(msg->Topics[0].ErrorCode, INVALID_REQUEST);
+
+            auto result = pqClient.DescribeTopic("/Root/topic-986-test", describeTopicSettings).GetValueSync();
+            UNIT_ASSERT(!result.IsSuccess());
+        }
+
     } // Y_UNIT_TEST(CreateTopicsScenario)
 
     Y_UNIT_TEST(CreatePartitionsScenario) {
@@ -2086,6 +2229,27 @@ Y_UNIT_TEST_SUITE(KafkaProtocol) {
             UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ResourceName.value(), shortTopic0Name);
             UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ErrorCode, INVALID_REQUEST);
         }
+
+        {
+            // Legal, but meaningless for Logbroker config 
+            std::map<TString, TString> configs { std::make_pair("flush.messages", "1") };
+            auto msg = client.AlterConfigs({ TTopicConfig(shortTopic0Name, 1, std::nullopt, std::nullopt, configs) });
+
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses.size(), 1);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ResourceName.value(), shortTopic0Name);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ErrorCode, NONE_ERROR);
+        }
+
+        {
+            // Both legal and illegal configs
+            std::map<TString, TString> configs { std::make_pair("compression.type", "zstd"), std::make_pair("flush.messages", "1") };
+            auto msg = client.AlterConfigs({ TTopicConfig(shortTopic0Name, 1, std::nullopt, std::nullopt, configs) });
+
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses.size(), 1);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ResourceName.value(), shortTopic0Name);
+            UNIT_ASSERT_VALUES_EQUAL(msg->Responses[0].ErrorCode, INVALID_REQUEST);
+        }
+
     }
 
     Y_UNIT_TEST(LoginWithApiKey) {

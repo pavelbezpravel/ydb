@@ -280,9 +280,9 @@ public:
         try {
             TSession::TPtr session = GetSession(options.SessionId());
             auto logCtx = NYql::NLog::CurrentLogContextPath();
-            return session->Queue_->Async([session, logCtx, abort=options.Abort()] () {
+            return session->Queue_->Async([session, logCtx, abort=options.Abort(), detachSnapshotTxs=options.DetachSnapshotTxs()] () {
                 YQL_LOG_CTX_ROOT_SESSION_SCOPE(logCtx);
-                return ExecFinalize(session, abort);
+                return ExecFinalize(session, abort, detachSnapshotTxs);
             });
         } catch (...) {
             return MakeFuture(ResultFromCurrentException<TFinalizeResult>());
@@ -1217,6 +1217,10 @@ public:
         }
     }
 
+    void AddCluster(const TYtClusterConfig& cluster) override {
+        Clusters_->AddCluster(cluster, false);
+    }
+
 private:
     class TNodeResultBuilder {
     public:
@@ -1350,9 +1354,13 @@ private:
         const TString OptLLVM_;
     };
 
-    static TFinalizeResult ExecFinalize(const TSession::TPtr& session, bool abort) {
+    static TFinalizeResult ExecFinalize(const TSession::TPtr& session, bool abort, bool detachSnapshotTxs) {
         try {
             TFinalizeResult res;
+            if (detachSnapshotTxs) {
+                YQL_CLOG(INFO, ProviderYt) << "Detaching all snapshot transactions";
+                session->TxCache_.DetachSnapshotTxs();
+            }
             if (abort) {
                 YQL_CLOG(INFO, ProviderYt) << "Aborting all transactions for hidden query";
                 session->TxCache_.AbortAll();
@@ -1395,6 +1403,7 @@ private:
                             res.Data[idx].Columns.ConstructInPlace(normalizedPath.Columns_->Parts_);
                         }
                         res.Data[idx].Ranges = normalizedPath.GetRanges();
+                        res.Data[idx].AdditionalAttributes = SerializeRichYPathAttrs(normalizedPath);
                     }));
 
                 }
@@ -1977,7 +1986,7 @@ private:
             }
             for (auto& name: names) {
                 auto fullName = prefix + name;
-                rangeRes.Tables.push_back(TCanonizedPath{fullName, Nothing(), {}});
+                rangeRes.Tables.push_back(TCanonizedPath{fullName, Nothing(), {}, Nothing()});
                 cached.push_back(NYT::TRichYPath(fullName));
             }
         }
@@ -2111,9 +2120,10 @@ private:
             if (deadline || isTimestamp) {
                 yqlAttrs["expiration_time"] = isTimestamp ? stamp.ToStringUpToSeconds()
                                                           : deadline->ToStringUpToSeconds();
-            } else if (interval || isDuration) {
-                yqlAttrs["expiration_time"] = isDuration ? (Now() + duration).ToStringUpToSeconds()
-                                                         : (Now() + *interval).ToStringUpToSeconds();
+            }
+            if (interval || isDuration) {
+                yqlAttrs["expiration_timeout"] = isDuration ? duration.MilliSeconds()
+                                                         : (*interval).MilliSeconds();
             }
             if (execCtx->Options_.Config()->NightlyCompress.Get(cluster).GetOrElse(false)) {
                 yqlAttrs["force_nightly_compress"] = true;
@@ -2383,15 +2393,23 @@ private:
                 );
             for (auto& idx: idxs) {
                 batchRes.push_back(batchGet->Get(tables[idx.first].Table() + "&/@", getOpts).Apply([idx, &attributes](const TFuture<NYT::TNode>& f) {
-                    NYT::TNode attrs = f.GetValue();
-                    if (GetTypeFromAttributes(attrs, false) == "link") {
-                        // override some attributes by the link ones
-                        if (attrs.HasKey(QB2Premapper)) {
-                            attributes[idx.first][QB2Premapper] = attrs[QB2Premapper];
+                    try {
+                        NYT::TNode attrs = f.GetValue();
+                        if (GetTypeFromAttributes(attrs, false) == "link") {
+                            // override some attributes by the link ones
+                            if (attrs.HasKey(QB2Premapper)) {
+                                attributes[idx.first][QB2Premapper] = attrs[QB2Premapper];
+                            }
+                            if (attrs.HasKey(YqlRowSpecAttribute)) {
+                                attributes[idx.first][YqlRowSpecAttribute] = attrs[YqlRowSpecAttribute];
+                            }
                         }
-                        if (attrs.HasKey(YqlRowSpecAttribute)) {
-                            attributes[idx.first][YqlRowSpecAttribute] = attrs[YqlRowSpecAttribute];
+                    } catch (const TErrorResponse& e) {
+                        // Yt returns NoSuchTransaction as inner issue for ResolveError
+                        if (!e.IsResolveError() || e.IsNoSuchTransaction()) {
+                            throw;
                         }
+                        // Just ignore. Original table path may be deleted at this time
                     }
                 }));
             }
@@ -2468,6 +2486,15 @@ private:
                 }
                 if (attrs.AsMap().contains("optimize_for") && attrs["optimize_for"].AsString() != "scan") {
                     metaInfo->Attrs["optimize_for"] = attrs["optimize_for"].AsString();
+                }
+                if (attrs.AsMap().contains(SecurityTagsName)) {
+                    TVector<TString> securityTags;
+                    for (const auto& tag : attrs[SecurityTagsName].AsList()) {
+                        securityTags.push_back(tag.AsString());
+                    }
+                    if (!securityTags.empty()) {
+                        metaInfo->Attrs[SecurityTagsName] = JoinSeq(';', securityTags);
+                    }
                 }
 
                 NYT::TNode schemaAttrs;
@@ -2695,7 +2722,7 @@ private:
         }
 
         TString type;
-        NYT::TNode rowSpec; 
+        NYT::TNode rowSpec;
         if (execCtx->Options_.FillSettings().Format == IDataProvider::EResultFormat::Skiff) {
             auto ytType =  ParseYTType(pull.Input().Ref(), ctx, execCtx, columns);
 
@@ -2970,7 +2997,7 @@ private:
                     return ExecCalc(lambda, extraUsage, tmpTablePath, execCtx, {},
                         TSkiffExprResultFactory(execCtx->Options_.FillSettings().RowsLimitPerWrite,
                             execCtx->Options_.FillSettings().AllResultsBytesLimit,
-                            hasListResult, 
+                            hasListResult,
                             rowSpec,
                             execCtx->Options_.OptLLVM()),
                         &columns,
@@ -3283,6 +3310,9 @@ private:
                 TGatewayTransformer transform(execCtx, entry, pgmBuilder, *tmpFiles);
                 size_t nodeCount = 0;
                 builder.UpdateLambdaCode(mapLambda, nodeCount, transform);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
                 job->SetLambdaCode(mapLambda);
                 job->SetOptLLVM(execCtx->Options_.OptLLVM());
                 job->SetUdfValidateMode(execCtx->Options_.UdfValidateMode());
@@ -3496,6 +3526,9 @@ private:
                 TGatewayTransformer transform(execCtx, entry, pgmBuilder, *tmpFiles);
                 size_t nodeCount = 0;
                 builder.UpdateLambdaCode(reduceLambda, nodeCount, transform);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
                 job->SetLambdaCode(reduceLambda);
                 job->SetOptLLVM(execCtx->Options_.OptLLVM());
                 job->SetUdfValidateMode(execCtx->Options_.UdfValidateMode());
@@ -3741,6 +3774,9 @@ private:
                 TGatewayTransformer transform(execCtx, entry, pgmBuilder, *tmpFiles);
                 size_t nodeCount = 0;
                 builder.UpdateLambdaCode(mapLambda, nodeCount, transform);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
                 mapJob->SetLambdaCode(mapLambda);
                 mapJob->SetOptLLVM(execCtx->Options_.OptLLVM());
                 mapJob->SetUdfValidateMode(execCtx->Options_.UdfValidateMode());
@@ -3767,6 +3803,9 @@ private:
                 TGatewayTransformer transform(execCtx, entry, pgmBuilder, *tmpFiles);
                 size_t nodeCount = 0;
                 builder.UpdateLambdaCode(reduceLambda, nodeCount, transform);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
                 reduceJob->SetLambdaCode(reduceLambda);
                 reduceJob->SetOptLLVM(execCtx->Options_.OptLLVM());
                 reduceJob->SetUdfValidateMode(execCtx->Options_.UdfValidateMode());
@@ -3910,6 +3949,9 @@ private:
                 TGatewayTransformer transform(execCtx, entry, pgmBuilder, *tmpFiles);
                 size_t nodeCount = 0;
                 builder.UpdateLambdaCode(reduceLambda, nodeCount, transform);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
                 reduceJob->SetLambdaCode(reduceLambda);
                 reduceJob->SetOptLLVM(execCtx->Options_.OptLLVM());
                 reduceJob->SetUdfValidateMode(execCtx->Options_.UdfValidateMode());
@@ -4169,6 +4211,9 @@ private:
                 }
                 size_t nodeCount = 0;
                 std::tie(lambda, nodeCount) = builder.Serialize(root);
+                if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                    execCtx->Options_.OptLLVM("OFF");
+                }
 
                 if (transform.CanExecuteInternally() && !testRun) {
                     const auto nativeTypeCompat = execCtx->Options_.Config()->NativeYtTypeCompatibility.Get(execCtx->Cluster_).GetOrElse(NTCF_LEGACY);
@@ -4741,6 +4786,9 @@ private:
             }
             size_t nodeCount = 0;
             std::tie(lambda, nodeCount) = builder.Serialize(root);
+            if (nodeCount > execCtx->Options_.Config()->LLVMNodeCountLimit.Get(execCtx->Cluster_).GetOrElse(DEFAULT_LLVM_NODE_COUNT_LIMIT)) {
+                execCtx->Options_.OptLLVM("OFF");
+            }
 
             if (transform.CanExecuteInternally()) {
                 TExploringNodeVisitor explorer;

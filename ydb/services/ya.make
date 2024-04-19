@@ -2,10 +2,13 @@ RECURSE(
     auth
     bg_tasks
     cms
-    dynamic_config
     datastreams
+    deprecated/persqueue_v0
+    deprecated/persqueue_v0/api
     discovery
+    dynamic_config
     etcd
+    ext_index
     fq
     kesus
     keyvalue
@@ -16,9 +19,6 @@ RECURSE(
     monitoring
     persqueue_cluster_discovery
     persqueue_v1
-    deprecated/persqueue_v0
-    deprecated/persqueue_v0/api
     rate_limiter
-    ext_index
     ydb
 )

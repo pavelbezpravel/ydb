@@ -10,10 +10,7 @@
 #include <ydb/core/tx/columnshard/data_sharing/manager/shared_blobs.h>
 
 #include <ydb/library/accessor/accessor.h>
-
-namespace NKikimr::NColumnShard {
-class TTiersManager;
-}
+#include <ydb/core/tx/tiering/abstract/manager.h>
 
 namespace NKikimr::NOlap {
 
@@ -45,8 +42,11 @@ protected:
     virtual bool DoStop() {
         return true;
     }
+    virtual const NSplitter::TSplitSettings& DoGetBlobSplitSettings() const {
+        return Default<NSplitter::TSplitSettings>();
+    }
 
-    virtual void DoOnTieringModified(const std::shared_ptr<NColumnShard::TTiersManager>& tiers) = 0;
+    virtual void DoOnTieringModified(const std::shared_ptr<NColumnShard::ITiersManager>& tiers) = 0;
     virtual TString DoDebugString() const {
         return "";
     }
@@ -67,6 +67,10 @@ public:
 
     void Stop();
 
+    const NSplitter::TSplitSettings& GetBlobSplitSettings() const {
+        return DoGetBlobSplitSettings();
+    }
+
     virtual TTabletsByBlob GetBlobsToDelete() const = 0;
     virtual std::shared_ptr<IBlobInUseTracker> GetBlobsTracker() const = 0;
 
@@ -79,31 +83,35 @@ public:
     bool Load(IBlobManagerDb& dbBlobs) {
         return DoLoad(dbBlobs);
     }
-    void OnTieringModified(const std::shared_ptr<NColumnShard::TTiersManager>& tiers) {
+    void OnTieringModified(const std::shared_ptr<NColumnShard::ITiersManager>& tiers) {
+        AFL_VERIFY(tiers);
         return DoOnTieringModified(tiers);
     }
 
-    std::shared_ptr<IBlobsDeclareRemovingAction> StartDeclareRemovingAction(const TString& consumerId) {
+    std::shared_ptr<IBlobsDeclareRemovingAction> StartDeclareRemovingAction(const NBlobOperations::EConsumer consumerId) {
         return DoStartDeclareRemovingAction(Counters->GetConsumerCounter(consumerId)->GetRemoveDeclareCounters());
     }
-    std::shared_ptr<IBlobsWritingAction> StartWritingAction(const TString& consumerId) {
+    std::shared_ptr<IBlobsWritingAction> StartWritingAction(const NBlobOperations::EConsumer consumerId) {
         auto result = DoStartWritingAction();
         result->SetCounters(Counters->GetConsumerCounter(consumerId)->GetWriteCounters());
         return result;
     }
-    std::shared_ptr<IBlobsReadingAction> StartReadingAction(const TString& consumerId) {
+    std::shared_ptr<IBlobsReadingAction> StartReadingAction(const NBlobOperations::EConsumer consumerId) {
         auto result = DoStartReadingAction();
         result->SetCounters(Counters->GetConsumerCounter(consumerId)->GetReadCounters());
         return result;
     }
     bool StartGC() {
+        NActors::TLogContextGuard gLogging = NActors::TLogContextBuilder::Build(NKikimrServices::TX_COLUMNSHARD)("storage_id", GetStorageId())("tablet_id", GetSelfTabletId());
         if (CurrentGCAction && CurrentGCAction->IsInProgress()) {
+            AFL_DEBUG(NKikimrServices::TX_COLUMNSHARD)("event", "gc_in_progress");
             return false;
         }
         if (Stopped) {
+            AFL_DEBUG(NKikimrServices::TX_COLUMNSHARD)("event", "stopped_on_gc");
             return false;
         }
-        auto task = StartGCAction(Counters->GetConsumerCounter("GC")->GetRemoveGCCounters());
+        auto task = StartGCAction(Counters->GetConsumerCounter(NBlobOperations::EConsumer::GC)->GetRemoveGCCounters());
         if (!task) {
             return false;
         }

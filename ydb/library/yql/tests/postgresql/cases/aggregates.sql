@@ -3,6 +3,27 @@
 --
 -- avoid bit-exact output here because operations may not be bit-exact.
 SET extra_float_digits = 0;
+SELECT avg(four) AS avg_1 FROM onek;
+SELECT avg(a) AS avg_32 FROM aggtest WHERE a < 100;
+-- In 7.1, avg(float4) is computed using float8 arithmetic.
+-- Round the result to 3 digits to avoid platform-specific results.
+SELECT avg(b)::numeric(10,3) AS avg_107_943 FROM aggtest;
+SELECT avg(gpa) AS avg_3_4 FROM ONLY student;
+SELECT sum(four) AS sum_1500 FROM onek;
+SELECT sum(a) AS sum_198 FROM aggtest;
+SELECT sum(gpa) AS avg_6_8 FROM ONLY student;
+SELECT max(four) AS max_3 FROM onek;
+SELECT max(a) AS max_100 FROM aggtest;
+SELECT max(aggtest.b) AS max_324_78 FROM aggtest;
+SELECT max(student.gpa) AS max_3_7 FROM student;
+SELECT stddev_pop(b) FROM aggtest;
+SELECT stddev_samp(b) FROM aggtest;
+SELECT var_pop(b) FROM aggtest;
+SELECT var_samp(b) FROM aggtest;
+SELECT stddev_pop(b::numeric) FROM aggtest;
+SELECT stddev_samp(b::numeric) FROM aggtest;
+SELECT var_pop(b::numeric) FROM aggtest;
+SELECT var_samp(b::numeric) FROM aggtest;
 -- population variance is defined for a single tuple, sample variance
 -- is not
 SELECT var_pop(1.0::float8), var_samp(2.0::float8);
@@ -58,6 +79,16 @@ SELECT avg(x::float8), var_pop(x::float8)
 FROM (VALUES (100000003), (100000004), (100000006), (100000007)) v(x);
 SELECT avg(x::float8), var_pop(x::float8)
 FROM (VALUES (7000000000005), (7000000000007)) v(x);
+-- SQL2003 binary aggregates
+SELECT regr_count(b, a) FROM aggtest;
+SELECT regr_sxx(b, a) FROM aggtest;
+SELECT regr_syy(b, a) FROM aggtest;
+SELECT regr_sxy(b, a) FROM aggtest;
+SELECT regr_avgx(b, a), regr_avgy(b, a) FROM aggtest;
+SELECT regr_r2(b, a) FROM aggtest;
+SELECT regr_slope(b, a), regr_intercept(b, a) FROM aggtest;
+SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
+SELECT corr(b, a) FROM aggtest;
 -- check single-tuple behavior
 SELECT covar_pop(1::float8,2::float8), covar_samp(3::float8,4::float8);
 SELECT covar_pop(1::float8,'inf'::float8), covar_samp(3::float8,'inf'::float8);
@@ -77,6 +108,13 @@ SELECT float8_regr_combine('{0,0,0,0,0,0}'::float8[],
 SELECT float8_regr_combine('{3,60,200,750,20000,2000}'::float8[],
                            '{2,180,200,740,57800,-3400}'::float8[]);
 DROP TABLE regr_test;
+-- test count, distinct
+SELECT count(four) AS cnt_1000 FROM onek;
+SELECT count(DISTINCT four) AS cnt_4 FROM onek;
+select ten, count(*), sum(four) from onek
+group by ten order by ten;
+select ten, count(four), sum(DISTINCT four) from onek
+group by ten order by ten;
 --
 -- test for bitwise integer aggregates
 --
@@ -93,12 +131,24 @@ CREATE TEMPORARY TABLE bool_test(
   b2 BOOL,
   b3 BOOL,
   b4 BOOL);
+select min(unique1) from tenk1;
+select max(unique1) from tenk1;
+select max(unique1) from tenk1 where unique1 < 42;
+select max(unique1) from tenk1 where unique1 > 42;
 -- the planner may choose a generic aggregate here if parallel query is
 -- enabled, since that plan will be parallel safe and the "optimized"
 -- plan, which has almost identical cost, will not be.  we want to test
 -- the optimized plan, so temporarily disable parallel query.
 begin;
+select max(unique1) from tenk1 where unique1 > 42000;
 rollback;
+select max(tenthous) from tenk1 where thousand = 33;
+select min(tenthous) from tenk1 where thousand = 33;
+select distinct max(unique2) from tenk1;
+select max(unique2) from tenk1 order by 1;
+select max(unique2) from tenk1 order by max(unique2);
+select max(unique2) from tenk1 order by max(unique2)+1;
+select max(100) from tenk1;
 -- try it on an inheritance tree
 create table minmaxtest(f1 int);
 create index minmaxtesti on minmaxtest(f1);
@@ -117,6 +167,8 @@ drop table t2;
 create temp table t1(f1 int, f2 bigint);
 create temp table t2(f1 bigint, f22 bigint);
 drop table t1, t2;
+select array_agg(distinct a)
+  from (values (1),(2),(1),(3),(null),(2)) v(a);
 -- string_agg tests
 select string_agg(a,',') from (values('aaaa'),('bbbb'),('cccc')) g(a);
 select string_agg(a,',') from (values('aaaa'),(null),('bbbb'),('cccc')) g(a);

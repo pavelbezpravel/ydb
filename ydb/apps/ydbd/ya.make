@@ -28,6 +28,7 @@ IF (ARCH_X86_64)
 ENDIF()
 
 PEERDIR(
+    ydb/apps/version
     ydb/core/driver_lib/run
     ydb/core/protos
     ydb/core/security
@@ -47,6 +48,7 @@ PEERDIR(
     ydb/library/yql/udfs/common/histogram
     ydb/library/yql/udfs/common/hyperloglog
     ydb/library/yql/udfs/common/ip_base
+    ydb/library/yql/udfs/common/knn
     ydb/library/yql/udfs/common/json
     ydb/library/yql/udfs/common/json2
     ydb/library/yql/udfs/common/math
@@ -83,6 +85,7 @@ CHECK_DEPENDENT_DIRS(
     tools/rorescompiler
     util
     ydb
+    yt
 )
 
 YQL_LAST_ABI_VERSION()

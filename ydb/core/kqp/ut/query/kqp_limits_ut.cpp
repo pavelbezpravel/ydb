@@ -1,6 +1,7 @@
 #include <ydb/core/kqp/ut/common/kqp_ut_common.h>
 
 #include <ydb/core/kqp/counters/kqp_counters.h>
+#include <ydb/library/ydb_issue/proto/issue_id.pb.h>
 
 #include <util/random/random.h>
 
@@ -17,6 +18,35 @@ namespace {
 }
 
 Y_UNIT_TEST_SUITE(KqpLimits) {
+    Y_UNIT_TEST(QSReplySizeEnsureMemoryLimits) {
+        TKikimrRunner kikimr;
+        CreateLargeTable(kikimr, 1'000, 100, 1'000, 1'000);
+
+        auto db = kikimr.GetQueryClient();
+
+        TControlWrapper mkqlInitialMemoryLimit;
+        TControlWrapper mkqlMaxMemoryLimit;
+
+        mkqlInitialMemoryLimit = kikimr.GetTestServer().GetRuntime()->GetAppData().Icb->RegisterSharedControl(
+            mkqlInitialMemoryLimit, "KqpSession.MkqlInitialMemoryLimit");
+        mkqlMaxMemoryLimit = kikimr.GetTestServer().GetRuntime()->GetAppData().Icb->RegisterSharedControl(
+            mkqlMaxMemoryLimit, "KqpSession.MkqlMaxMemoryLimit");
+
+        mkqlInitialMemoryLimit = 1_KB;
+        mkqlMaxMemoryLimit = 1_KB;
+
+        auto result = db.ExecuteQuery(R"(
+            UPSERT INTO KeyValue2
+            SELECT
+                KeyText AS Key,
+                DataText AS Value
+            FROM `/Root/LargeTable`;
+        )", NQuery::TTxControl::BeginTx().CommitTx()).ExtractValueSync();
+        result.GetIssues().PrintTo(Cerr);
+        UNIT_ASSERT_VALUES_EQUAL(result.GetStatus(), EStatus::PRECONDITION_FAILED);
+        UNIT_ASSERT(!to_lower(result.GetIssues().ToString()).Contains("query result"));
+    }
+
     Y_UNIT_TEST(KqpMkqlMemoryLimitException) {
         TKikimrRunner kikimr;
         CreateLargeTable(kikimr, 10, 10, 1'000'000, 1);
@@ -910,8 +940,7 @@ Y_UNIT_TEST_SUITE(KqpLimits) {
         SetRandomSeed(42);
 
         auto settings = TKikimrSettings()
-            .SetWithSampleTables(false)
-            .SetForceColumnTablesCompositeMarks(true);
+            .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
         CreateManyShardsTable(kikimr, 1000, 100, 1000);
 
@@ -942,8 +971,7 @@ Y_UNIT_TEST_SUITE(KqpLimits) {
         SetRandomSeed(42);
 
         auto settings = TKikimrSettings()
-            .SetWithSampleTables(false)
-            .SetForceColumnTablesCompositeMarks(true);
+            .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
         CreateManyShardsTable(kikimr, 1100, 100, 1000);
 
@@ -989,8 +1017,7 @@ Y_UNIT_TEST_SUITE(KqpLimits) {
         SetRandomSeed(42);
 
         auto settings = TKikimrSettings()
-            .SetWithSampleTables(false)
-            .SetForceColumnTablesCompositeMarks(true);
+            .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
         CreateManyShardsTable(kikimr, 5000, 100, 1000);
 
@@ -1032,6 +1059,24 @@ Y_UNIT_TEST_SUITE(KqpLimits) {
             UNIT_ASSERT(current < limit);
             last = current;
         }
+    }
+
+    Y_UNIT_TEST(QSReplySize) {
+        TKikimrRunner kikimr;
+        CreateLargeTable(kikimr, 10'000, 100, 1'000, 1'000);
+
+        auto db = kikimr.GetQueryClient();
+
+        auto result = db.ExecuteQuery(R"(
+            UPSERT INTO KeyValue2
+            SELECT
+                KeyText AS Key,
+                DataText AS Value
+            FROM `/Root/LargeTable`;
+        )", NQuery::TTxControl::BeginTx().CommitTx()).ExtractValueSync();
+        result.GetIssues().PrintTo(Cerr);
+        UNIT_ASSERT_VALUES_EQUAL(result.GetStatus(), EStatus::PRECONDITION_FAILED);
+        UNIT_ASSERT(!to_lower(result.GetIssues().ToString()).Contains("query result"));
     }
 }
 

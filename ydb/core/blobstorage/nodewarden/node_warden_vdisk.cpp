@@ -57,16 +57,14 @@ namespace NKikimr::NStorage {
     void TNodeWarden::StartLocalVDiskActor(TVDiskRecord& vdisk, TDuration yardInitDelay) {
         const TVSlotId vslotId = vdisk.GetVSlotId();
         const ui64 pdiskGuid = vdisk.Config.GetVDiskLocation().GetPDiskGuid();
-        const bool restartInFlight = InFlightRestartedPDisks.count({vslotId.NodeId, vslotId.PDiskId});
         const bool donorMode = vdisk.Config.HasDonorMode();
         const bool readOnly = vdisk.Config.GetReadOnly();
         Y_VERIFY_S(!donorMode || !readOnly, "Only one of modes should be enabled: donorMode " << donorMode << ", readOnly " << readOnly);
 
-        STLOG(PRI_DEBUG, BS_NODE, NW23, "StartLocalVDiskActor", (RestartInFlight, restartInFlight),
-            (SlayInFlight, SlayInFlight.contains(vslotId)), (VDiskId, vdisk.GetVDiskId()), (VSlotId, vslotId),
-            (PDiskGuid, pdiskGuid), (DonorMode, donorMode));
+        STLOG(PRI_DEBUG, BS_NODE, NW23, "StartLocalVDiskActor", (SlayInFlight, SlayInFlight.contains(vslotId)),
+            (VDiskId, vdisk.GetVDiskId()), (VSlotId, vslotId), (PDiskGuid, pdiskGuid), (DonorMode, donorMode));
 
-        if (restartInFlight || SlayInFlight.contains(vslotId)) {
+        if (SlayInFlight.contains(vslotId)) {
             return;
         }
 
@@ -176,6 +174,29 @@ namespace NKikimr::NStorage {
         vdiskConfig->EnableVPatch = EnableVPatch;
         vdiskConfig->FeatureFlags = Cfg->FeatureFlags;
 
+        if (Cfg->BlobStorageConfig.HasCostMetricsSettings()) {
+            for (auto type : Cfg->BlobStorageConfig.GetCostMetricsSettings().GetVDiskTypes()) {
+                if (type.HasPDiskType() && deviceType == PDiskTypeToPDiskType(type.GetPDiskType())) {
+                    if (type.HasBurstThresholdNs()) {
+                        vdiskConfig->BurstThresholdNs = type.GetBurstThresholdNs();
+                    }
+                    if (type.HasDiskTimeAvailableScale()) {
+                        vdiskConfig->DiskTimeAvailableScale = type.GetDiskTimeAvailableScale();
+                    }
+                }
+            }
+        }
+
+        if (StorageConfig.HasBlobStorageConfig() && StorageConfig.GetBlobStorageConfig().HasVDiskPerformanceSettings()) {
+            for (auto &type : StorageConfig.GetBlobStorageConfig().GetVDiskPerformanceSettings().GetVDiskTypes()) {
+                if (type.HasPDiskType() && deviceType == PDiskTypeToPDiskType(type.GetPDiskType())) {
+                    if (type.HasMinHugeBlobSizeInBytes()) {
+                        vdiskConfig->MinHugeBlobInBytes = type.GetMinHugeBlobSizeInBytes();
+                    }
+                }
+            }
+        }
+
         // issue initial report to whiteboard before creating actor to avoid races
         Send(WhiteboardId, new NNodeWhiteboard::TEvWhiteboard::TEvVDiskStateUpdate(vdiskId, groupInfo->GetStoragePoolName(),
             vslotId.PDiskId, vslotId.VDiskSlotId, pdiskGuid, kind, donorMode, whiteboardInstanceGuid, std::move(donors)));
@@ -264,6 +285,7 @@ namespace NKikimr::NStorage {
             }
             DestroyLocalVDisk(record);
             LocalVDisks.erase(it);
+            ApplyServiceSetPDisks(); // destroy unneeded PDisk actors
         } else if (vdisk.GetDoWipe()) {
             Slay(record);
         } else if (!record.RuntimeData) {

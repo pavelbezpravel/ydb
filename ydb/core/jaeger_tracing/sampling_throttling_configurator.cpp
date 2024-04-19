@@ -9,6 +9,33 @@
 
 namespace NKikimr::NJaegerTracing {
 
+namespace {
+
+template<class T>
+void PropagateUnspecifiedRequest(TRulesContainer<T>& rules) {
+    constexpr auto unspecifiedRequestType = static_cast<size_t>(ERequestType::UNSPECIFIED);
+    const auto& unspecifiedRequestTypeRules = rules[unspecifiedRequestType];
+    
+    for (size_t requestType = 0; requestType < kRequestTypesCnt; ++requestType) {
+        if (requestType == unspecifiedRequestType) {
+            continue;
+        }
+
+        auto& requestTypeDatabaseRules = rules[requestType].DatabaseRules;
+        auto& requestTypeGlobalRules = rules[requestType].Global;
+        for (const auto& [database, unspecifiedDatabaseRules] : unspecifiedRequestTypeRules.DatabaseRules) {
+            auto& databaseRules = requestTypeDatabaseRules[database];
+            databaseRules.insert(databaseRules.end(), unspecifiedDatabaseRules.begin(),
+                                         unspecifiedDatabaseRules.end());
+        }
+        requestTypeGlobalRules.insert(requestTypeGlobalRules.end(),
+                                      unspecifiedRequestTypeRules.Global.begin(),
+                                      unspecifiedRequestTypeRules.Global.end());
+    }
+}
+
+} // namespace anonymous
+
 TSamplingThrottlingConfigurator::TSamplingThrottlingConfigurator(TIntrusivePtr<ITimeProvider> timeProvider,
                                                                  TIntrusivePtr<IRandomProvider>& randomProvider)
     : TimeProvider(std::move(timeProvider))
@@ -22,8 +49,11 @@ TIntrusivePtr<TSamplingThrottlingControl> TSamplingThrottlingConfigurator::GetCo
     return control;
 }
 
-void TSamplingThrottlingConfigurator::UpdateSettings(TSettings<double, TThrottlingSettings> settings) {
-    CurrentSettings = GenerateThrottlers(std::move(settings));
+void TSamplingThrottlingConfigurator::UpdateSettings(TSettings<double, TWithTag<TThrottlingSettings>> settings) {
+    auto enrichedSettings = GenerateThrottlers(std::move(settings));
+    PropagateUnspecifiedRequest(enrichedSettings.SamplingRules);
+    PropagateUnspecifiedRequest(enrichedSettings.ExternalThrottlingRules);
+    CurrentSettings = std::move(enrichedSettings);
 
     for (auto& control : IssuedControls) {
         control->UpdateImpl(GenerateSetup());
@@ -31,9 +61,15 @@ void TSamplingThrottlingConfigurator::UpdateSettings(TSettings<double, TThrottli
 }
 
 TSettings<double, TIntrusivePtr<TThrottler>> TSamplingThrottlingConfigurator::GenerateThrottlers(
-    TSettings<double, TThrottlingSettings> settings) {
-    return settings.MapThrottler([this](const TThrottlingSettings& settings) {
-        return MakeIntrusive<TThrottler>(settings.MaxTracesPerMinute, settings.MaxTracesBurst, TimeProvider);
+    TSettings<double, TWithTag<TThrottlingSettings>> settings) {
+    THashMap<size_t, TIntrusivePtr<TThrottler>> throttlers;
+    return settings.MapThrottler([this, &throttlers](const TWithTag<TThrottlingSettings>& settings) {
+        if (auto it = throttlers.FindPtr(settings.Tag)) {
+            return *it;
+        }
+        auto throttler = MakeIntrusive<TThrottler>(settings.Value.MaxTracesPerMinute, settings.Value.MaxTracesBurst, TimeProvider);
+        throttlers[settings.Tag] = throttler;
+        return throttler;
     });
 }
 

@@ -37,7 +37,7 @@
 #include <ydb/library/yql/providers/common/comp_nodes/yql_factory.h>
 #include <ydb/library/yql/providers/dq/task_runner/tasks_runner_local.h>
 #include <ydb/library/yql/providers/dq/worker_manager/local_worker_manager.h>
-#include <ydb/library/yql/providers/generic/actors/yql_generic_source_factory.h>
+#include <ydb/library/yql/providers/generic/actors/yql_generic_provider_factories.h>
 #include <ydb/library/yql/providers/s3/actors/yql_s3_sink_factory.h>
 #include <ydb/library/yql/providers/s3/actors/yql_s3_source_factory.h>
 #include <ydb/library/yql/providers/s3/proto/retry_config.pb.h>
@@ -177,7 +177,10 @@ void Init(
         &protoConfig.GetGateways().GetHttpGateway(),
         yqCounters->GetSubgroup("subcomponent", "http_gateway"));
 
-    const auto connectorClient = NYql::NConnector::MakeClientGRPC(protoConfig.GetGateways().GetGeneric().GetConnector());
+    NYql::NConnector::IClient::TPtr connectorClient = nullptr;
+    if (protoConfig.GetGateways().GetGeneric().HasConnector()) {
+        connectorClient = NYql::NConnector::MakeClientGRPC(protoConfig.GetGateways().GetGeneric().GetConnector());
+    }
 
     if (protoConfig.GetTokenAccessor().GetEnabled()) {
         const auto& tokenAccessorConfig = protoConfig.GetTokenAccessor();
@@ -192,7 +195,7 @@ void Init(
 
     if (protoConfig.GetPrivateApi().GetEnabled()) {
         const auto& s3readConfig = protoConfig.GetReadActorsFactoryConfig().GetS3ReadActorFactoryConfig();
-        auto s3HttpRetryPolicy = NYql::GetHTTPDefaultRetryPolicy(TDuration::Max());
+        auto s3HttpRetryPolicy = NYql::GetHTTPDefaultRetryPolicy(NYql::THttpRetryPolicyOptions{.MaxTime = TDuration::Max(), .RetriedCurlCodes = NYql::FqRetriedCurlCodes()});
         NYql::NDq::TS3ReadActorFactoryConfig readActorFactoryCfg;
         if (const ui64 rowsInBatch = s3readConfig.GetRowsInBatch()) {
             readActorFactoryCfg.RowsInBatch = rowsInBatch;
@@ -224,9 +227,9 @@ void Init(
             yqCounters->GetSubgroup("subsystem", "S3ReadActor"));
         RegisterS3WriteActorFactory(*asyncIoFactory, credentialsFactory,
             httpGateway, s3HttpRetryPolicy);
-        RegisterGenericReadActorFactory(*asyncIoFactory, credentialsFactory, connectorClient);
+        RegisterGenericProviderFactories(*asyncIoFactory, credentialsFactory, connectorClient);
 
-        RegisterDqPqWriteActorFactory(*asyncIoFactory, yqSharedResources->UserSpaceYdbDriver, credentialsFactory);
+        RegisterDqPqWriteActorFactory(*asyncIoFactory, yqSharedResources->UserSpaceYdbDriver, credentialsFactory, yqCounters->GetSubgroup("subsystem", "DqSinkTracker"));
         RegisterDQSolomonWriteActorFactory(*asyncIoFactory, credentialsFactory);
     }
 

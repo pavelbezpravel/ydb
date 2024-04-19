@@ -10,10 +10,7 @@ SRCS(
     columnshard__progress_tx.cpp
     columnshard__propose_cancel.cpp
     columnshard__propose_transaction.cpp
-    columnshard__read_base.cpp
     columnshard__scan.cpp
-    columnshard__index_scan.cpp
-    columnshard__stats_scan.cpp
     columnshard__write.cpp
     columnshard__write_index.cpp
     columnshard.cpp
@@ -24,6 +21,7 @@ SRCS(
     columnshard_view.cpp
     counters.cpp
     defs.cpp
+    inflight_request_tracker.cpp
     write_actor.cpp
     tables_manager.cpp
 )
@@ -44,6 +42,7 @@ PEERDIR(
     ydb/core/tx/time_cast
     ydb/core/tx/columnshard/engines
     ydb/core/tx/columnshard/engines/writer
+    ydb/core/tx/columnshard/engines/reader/abstract
     ydb/core/tx/columnshard/counters
     ydb/core/tx/columnshard/common
     ydb/core/tx/columnshard/splitter
@@ -54,6 +53,7 @@ PEERDIR(
     ydb/core/tx/columnshard/blobs_action
     ydb/core/tx/columnshard/data_locks
     ydb/core/tx/columnshard/data_sharing
+    ydb/core/tx/columnshard/export
     ydb/core/tx/columnshard/resource_subscriber
     ydb/core/tx/columnshard/normalizer/granule
     ydb/core/tx/columnshard/normalizer/portion

@@ -99,13 +99,13 @@ namespace {
 
     void TDump::Index(const TPart &part, ui32 depth) noexcept
     {
-        if (!part.IndexPages.Groups) {
+        if (!part.IndexPages.HasFlat()) {
             return;
         }
 
         TVector<TCell> key(Reserve(part.Scheme->Groups[0].KeyTypes.size()));
 
-        auto indexPageId = part.IndexPages.Groups[0];
+        auto indexPageId = part.IndexPages.GetFlat({});
         auto indexPage = Env->TryGetPage(&part, indexPageId);
 
         if (!indexPage) {
@@ -116,7 +116,7 @@ namespace {
             return;
         }
         
-        auto index = NPage::TIndex(*indexPage);
+        auto index = NPage::TFlatIndex(*indexPage);
         auto label = index.Label();
 
         Out
@@ -133,7 +133,7 @@ namespace {
 
         Out << ")" << Endl;
 
-        auto printIndexKey = [&](const NPage::TIndex::TRecord* record) {
+        auto printIndexKey = [&](const NPage::TFlatIndex::TRecord* record) {
             key.clear();
             for (const auto &info: part.Scheme->Groups[0].ColsKeyIdx)
                 key.push_back(record->Cell(info));
@@ -172,8 +172,8 @@ namespace {
 
     void TDump::BTreeIndex(const TPart &part) noexcept
     {
-        if (part.IndexPages.BTreeGroups) {
-            auto meta = part.IndexPages.BTreeGroups.front();
+        if (part.IndexPages.HasBTree()) {
+            auto meta = part.IndexPages.GetBTree({});
             if (meta.LevelCount) {
                 BTreeIndexNode(part, meta);
             } else {

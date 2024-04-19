@@ -1,3 +1,4 @@
+#include <ydb/core/tablet_flat/util_fmt_cell.h>
 #include <ydb/core/tx/schemeshard/ut_helpers/helpers.h>
 #include <ydb/core/tx/schemeshard/schemeshard_utils.h>
 
@@ -34,7 +35,7 @@ Y_UNIT_TEST_SUITE(TSchemeShardSplitBySizeTest) {
         auto prevObserver = SetSuppressObserver(runtime, suppressed, TEvHive::TEvCreateTablet::EventType);
 
         TestSplitTable(runtime, ++txId, "/MyRoot/Table", R"(
-                            SourceTabletId: 9437194
+                            SourceTabletId: 72075186233409546
                             SplitBoundary {
                                 KeyPrefix {
                                     Tuple { Optional { Text: "A" } }
@@ -44,7 +45,7 @@ Y_UNIT_TEST_SUITE(TSchemeShardSplitBySizeTest) {
         RebootTablet(runtime, TTestTxConfig::SchemeShard, runtime.AllocateEdgeActor());
 
         TestSplitTable(runtime, ++txId, "/MyRoot/Table", R"(
-                        SourceTabletId: 9437194
+                        SourceTabletId: 72075186233409546
                         SplitBoundary {
                             KeyPrefix {
                                 Tuple { Optional { Text: "A" } }

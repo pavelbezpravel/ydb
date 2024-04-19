@@ -48,7 +48,6 @@ bool TSessionsManager::Load(NTable::TDatabase& database, const TColumnEngineForL
         }
 
         while (!rowset.EndOfSet()) {
-            const TString& sessionId = rowset.GetValue<Schema::SourceSessions::SessionId>();
             auto session = std::make_shared<TSourceSession>((TTabletId)index->GetTabletId());
 
             NKikimrColumnShardDataSharingProto::TSourceSession protoSession;
@@ -61,7 +60,7 @@ bool TSessionsManager::Load(NTable::TDatabase& database, const TColumnEngineForL
             AFL_VERIFY(protoSessionCursorStatic.ParseFromString(rowset.GetValue<Schema::SourceSessions::CursorStatic>()));
 
             AFL_VERIFY(index);
-            AFL_VERIFY(session->DeserializeFromProto(protoSession, protoSessionCursorDynamic, protoSessionCursorStatic));
+            session->DeserializeFromProto(protoSession, protoSessionCursorDynamic, protoSessionCursorStatic).Validate();
             AFL_VERIFY(SourceSessions.emplace(session->GetSessionId(), session).second);
             if (!rowset.Next()) {
                 return false;
@@ -77,7 +76,6 @@ bool TSessionsManager::Load(NTable::TDatabase& database, const TColumnEngineForL
         }
 
         while (!rowset.EndOfSet()) {
-            const TString& sessionId = rowset.GetValue<Schema::DestinationSessions::SessionId>();
             auto session = std::make_shared<TDestinationSession>();
 
             NKikimrColumnShardDataSharingProto::TDestinationSession protoSession;
@@ -87,8 +85,8 @@ bool TSessionsManager::Load(NTable::TDatabase& database, const TColumnEngineForL
             AFL_VERIFY(protoSessionCursor.ParseFromString(rowset.GetValue<Schema::DestinationSessions::Cursor>()));
 
             AFL_VERIFY(index);
-            AFL_VERIFY(session->DeserializeDataFromProto(protoSession, *index));
-            AFL_VERIFY(session->DeserializeCursorFromProto(protoSessionCursor));
+            session->DeserializeDataFromProto(protoSession, *index).Validate();
+            session->DeserializeCursorFromProto(protoSessionCursor).Validate();
             AFL_VERIFY(DestSessions.emplace(session->GetSessionId(), session).second);
             if (!rowset.Next()) {
                 return false;

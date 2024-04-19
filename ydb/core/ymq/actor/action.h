@@ -630,23 +630,26 @@ private:
             }
         }
 
-        if (ev->Get()->Throttled) {
-            MakeError(MutableErrorDesc(), NErrors::THROTTLING_EXCEPTION, "Too many requests for nonexistent queue.");
-            SendReplyAndDie();
-            return;
-        }
-
         if (ev->Get()->Fail) {
             MakeError(MutableErrorDesc(), NErrors::INTERNAL_FAILURE, "Failed to get configuration.");
             SendReplyAndDie();
             return;
         }
 
-        if (TDerived::NeedExistingQueue() && !ev->Get()->QueueExists) {
-            MakeError(MutableErrorDesc(), NErrors::NON_EXISTENT_QUEUE);
-            SendReplyAndDie();
-            return;
+        if (TDerived::NeedExistingQueue()) {
+            if (ev->Get()->Throttled) {
+                MakeError(MutableErrorDesc(), NErrors::THROTTLING_EXCEPTION, "Too many requests for nonexistent queue.");
+                SendReplyAndDie();
+                return;
+            }
+            if (!ev->Get()->QueueExists) {
+                MakeError(MutableErrorDesc(), NErrors::NON_EXISTENT_QUEUE);
+                SendReplyAndDie();
+                return;
+            }
         }
+
+        Y_ABORT_UNLESS(SchemeCache_);
 
         bool isACLProtectedAccount = Cfg().GetForceAccessControl();
         if (!IsCloud() && (SecurityToken_ || (Cfg().GetForceAccessControl() && (isACLProtectedAccount = IsACLProtectedAccount(UserName_))))) {
@@ -664,8 +667,6 @@ private:
                 SendReplyAndDie();
                 return;
             }
-
-            Y_ABORT_UNLESS(SchemeCache_);
 
             RequestSchemeCache(GetActionACLSourcePath()); // this also checks that requested queue (if any) does exist
             RequestTicketParser();

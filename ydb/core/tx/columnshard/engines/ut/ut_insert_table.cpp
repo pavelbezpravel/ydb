@@ -28,9 +28,19 @@ public:
         return true;
     }
 
-    void WriteColumn(const TPortionInfo&, const TColumnRecord&) override {}
+    virtual void WritePortion(const NOlap::TPortionInfo& /*portion*/) override {
+
+    }
+    virtual void ErasePortion(const NOlap::TPortionInfo& /*portion*/) override {
+
+    }
+    virtual bool LoadPortions(const std::function<void(NOlap::TPortionInfoConstructor&&, const NKikimrTxColumnShard::TIndexPortionMeta&)>& /*callback*/) override {
+        return true;
+    }
+
+    void WriteColumn(const TPortionInfo&, const TColumnRecord&, const ui32 /*firstPKColumnId*/) override {}
     void EraseColumn(const TPortionInfo&, const TColumnRecord&) override {}
-    bool LoadColumns(const std::function<void(const TPortionInfo&, const TColumnChunkLoadContext&)>&) override { return true; }
+    bool LoadColumns(const std::function<void(NOlap::TPortionInfoConstructor&&, const TColumnChunkLoadContext&)>&) override { return true; }
 
     virtual void WriteIndex(const TPortionInfo& /*portion*/, const TIndexChunk& /*row*/) override {}
     virtual void EraseIndex(const TPortionInfo& /*portion*/, const TIndexChunk& /*row*/) override {}
@@ -47,7 +57,7 @@ Y_UNIT_TEST_SUITE(TColumnEngineTestInsertTable) {
         ui64 writeId = 0;
         ui64 tableId = 0;
         TString dedupId = "0";
-        TUnifiedBlobId blobId1(2222, 1, 1, 100, 1);
+        TUnifiedBlobId blobId1(2222, 1, 1, 100, 2, 0, 1);
 
         TTestInsertTableDB dbTable;
         TInsertTable insertTable;
@@ -62,7 +72,7 @@ Y_UNIT_TEST_SUITE(TColumnEngineTestInsertTable) {
         UNIT_ASSERT(!ok);
 
         // insert different blodId with the same writeId and dedupId
-        TUnifiedBlobId blobId2(2222, 1, 2, 100, 1);
+        TUnifiedBlobId blobId2(2222, 1, 2, 100, 2, 0, 1);
         ok = insertTable.Insert(dbTable, TInsertedData(writeId, tableId, dedupId, blobId2, TLocalHelper::GetMetaProto(), indexSnapshot, {}));
         UNIT_ASSERT(!ok);
 
