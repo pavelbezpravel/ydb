@@ -162,6 +162,7 @@ class KikimrConfigGenerator(object):
             default_user_sid=None,
             pg_compatible_expirement=False,
             generic_connector_config=None,  # typing.Optional[TGenericConnectorConfig]
+            pgwire_port=None,
     ):
         if extra_feature_flags is None:
             extra_feature_flags = []
@@ -222,6 +223,11 @@ class KikimrConfigGenerator(object):
 
         self.__additional_log_configs = {} if additional_log_configs is None else additional_log_configs
         self.__additional_log_configs.update(get_additional_log_configs())
+        if pg_compatible_expirement:
+            self.__additional_log_configs.update({
+                'PGWIRE': 'DEBUG',
+                'LOCAL_PGWIRE':'DEBUG',
+            })
 
         self.dynamic_pdisk_size = dynamic_pdisk_size
         self.dynamic_storage_pools = dynamic_storage_pools
@@ -252,6 +258,10 @@ class KikimrConfigGenerator(object):
         if os.getenv('PGWIRE_LISTENING_PORT', ''):
             self.yaml_config["local_pg_wire_config"] = {}
             self.yaml_config["local_pg_wire_config"]["listening_port"] = os.getenv('PGWIRE_LISTENING_PORT')
+
+        if pgwire_port:
+            self.yaml_config["local_pg_wire_config"] = {}
+            self.yaml_config["local_pg_wire_config"]["listening_port"] = pgwire_port
 
         if disable_iterator_reads:
             self.yaml_config["table_service_config"]["enable_kqp_scan_query_source_read"] = False
@@ -380,8 +390,8 @@ class KikimrConfigGenerator(object):
 
         if pg_compatible_expirement:
             self.yaml_config["table_service_config"]["enable_prepared_ddl"] = True
-            # self.yaml_config["table_service_config"]["enable_ast_cache"] = True
-            # self.yaml_config["table_service_config"]["enable_pg_consts_to_params"] = True
+            self.yaml_config["table_service_config"]["enable_ast_cache"] = True
+            self.yaml_config["table_service_config"]["enable_pg_consts_to_params"] = True
             self.yaml_config["table_service_config"]["index_auto_choose_mode"] = 'max_used_prefix'
             self.yaml_config["feature_flags"]['enable_temp_tables'] = True
             self.yaml_config["feature_flags"]['enable_table_pg_types'] = True

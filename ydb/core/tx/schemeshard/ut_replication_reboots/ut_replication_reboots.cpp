@@ -7,9 +7,11 @@ Y_UNIT_TEST_SUITE(TReplicationWithRebootsTests) {
         return Sprintf(R"(
             Name: "%s"
             Config {
-              StaticCredentials {
-                User: "user"
-                Password: "pwd"
+              SrcConnectionParams {
+                StaticCredentials {
+                  User: "user"
+                  Password: "pwd"
+                }
               }
               Specific {
                 Targets {
@@ -137,6 +139,37 @@ Y_UNIT_TEST_SUITE(TReplicationWithRebootsTests) {
             }
             t.TestEnv->TestWaitNotification(runtime, t.TxId);
             TestLs(runtime, "/MyRoot/Replication", false, NLs::PathExist);
+        });
+    }
+
+    Y_UNIT_TEST(Alter) {
+        TTestWithReboots t(false);
+        t.GetTestEnvOptions().InitYdbDriver(true);
+
+        t.Run([&](TTestActorRuntime& runtime, bool& activeZone) {
+            {
+                TInactiveZone inactive(activeZone);
+                SetupLogging(runtime);
+
+                TestCreateReplication(runtime, ++t.TxId, "/MyRoot", DefaultScheme("Replication"));
+                t.TestEnv->TestWaitNotification(runtime, t.TxId);
+            }
+
+            TestAlterReplication(runtime, ++t.TxId, "/MyRoot", R"(
+                Name: "Replication"
+                State {
+                  Done {
+                    FailoverMode: FAILOVER_MODE_FORCE
+                  }
+                }
+            )");
+            t.TestEnv->TestWaitNotification(runtime, t.TxId);
+
+            {
+                TInactiveZone inactive(activeZone);
+                TestLs(runtime, "/MyRoot/Replication", false,
+                    NLs::ReplicationState(NKikimrReplication::TReplicationState::kDone));
+            }
         });
     }
 

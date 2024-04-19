@@ -5,6 +5,7 @@
 #include <ydb/core/wrappers/ut_helpers/s3_mock.h>
 #include <ydb/core/wrappers/s3_wrapper.h>
 #include <ydb/core/metering/metering.h>
+#include <ydb/public/api/protos/ydb_export.pb.h>
 
 #include <util/string/builder.h>
 #include <util/string/cast.h>
@@ -364,7 +365,6 @@ Y_UNIT_TEST_SUITE(TExportToS3Tests) {
       }
     }
   }
-  not_null: false
   from_literal {
     type {
       optional_type {
@@ -389,7 +389,6 @@ columns {
       }
     }
   }
-  not_null: false
   from_literal {
     type {
       optional_type {

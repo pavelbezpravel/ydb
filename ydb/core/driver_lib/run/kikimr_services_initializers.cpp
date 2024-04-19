@@ -110,6 +110,8 @@
 
 #include <ydb/library/services/services.pb.h>
 #include <ydb/core/protos/console_config.pb.h>
+#include <ydb/core/protos/node_limits.pb.h>
+#include <ydb/core/protos/compile_service_config.pb.h>
 
 #include <ydb/core/public_http/http_service.h>
 
@@ -311,6 +313,7 @@ void AddExecutorPool(
         basic.SpinThreshold = poolConfig.GetSpinThreshold();
         basic.Affinity = ParseAffinity(poolConfig.GetAffinity());
         basic.RealtimePriority = poolConfig.GetRealtimePriority();
+        basic.HasSharedThread = poolConfig.GetHasSharedThread();
         if (poolConfig.HasTimePerMailboxMicroSecs()) {
             basic.TimePerMailbox = TDuration::MicroSeconds(poolConfig.GetTimePerMailboxMicroSecs());
         } else if (systemConfig.HasTimePerMailboxMicroSecs()) {
@@ -537,6 +540,16 @@ static TInterconnectSettings GetInterconnectSettings(const NKikimrConfig::TInter
     }
     result.SocketBacklogSize = config.GetSocketBacklogSize();
 
+    if (config.HasFirstErrorSleep()) {
+        result.FirstErrorSleep = DurationFromProto(config.GetFirstErrorSleep());
+    }
+    if (config.HasMaxErrorSleep()) {
+        result.MaxErrorSleep = DurationFromProto(config.GetMaxErrorSleep());
+    }
+    if (config.HasErrorSleepRetryMultiplier()) {
+        result.ErrorSleepRetryMultiplier = config.GetErrorSleepRetryMultiplier();
+    }
+
     return result;
 }
 
@@ -700,8 +713,10 @@ void TBasicServicesInitializer::InitializeServices(NActors::TActorSystemSetup* s
                         data.Yellow ? NKikimrWhiteboard::EFlag::Yellow :
                         data.Orange ? NKikimrWhiteboard::EFlag::Orange :
                         data.Red ? NKikimrWhiteboard::EFlag::Red : NKikimrWhiteboard::EFlag()));
-                    data.ActorSystem->Send(whiteboardId, new NNodeWhiteboard::TEvWhiteboard::TEvClockSkewUpdate(
-                        data.PeerId, data.ClockSkew));
+                    if (data.ReportClockSkew) {
+                        data.ActorSystem->Send(whiteboardId, new NNodeWhiteboard::TEvWhiteboard::TEvClockSkewUpdate(
+                            data.PeerId, data.ClockSkew));
+                    }
                 };
             }
 
@@ -851,7 +866,7 @@ void TBasicServicesInitializer::InitializeServices(NActors::TActorSystemSetup* s
                     break;
                 }
 
-                NWilson::WilsonUploaderParams uploaderParams {
+                NWilson::TWilsonUploaderParams uploaderParams {
                     .CollectorUrl = opentelemetry.GetCollectorUrl(),
                     .ServiceName = opentelemetry.GetServiceName(),
                     .GrpcSigner = std::move(grpcSigner),
@@ -871,14 +886,11 @@ void TBasicServicesInitializer::InitializeServices(NActors::TActorSystemSetup* s
                     GET_FIELD_FROM_CONFIG(MaxExportedSpansPerSecond)
                     GET_FIELD_FROM_CONFIG(MaxSpansInBatch)
                     GET_FIELD_FROM_CONFIG(MaxBytesInBatch)
+                    GET_FIELD_FROM_CONFIG(MaxBatchAccumulationMilliseconds)
                     GET_FIELD_FROM_CONFIG(SpanExportTimeoutSeconds)
                     GET_FIELD_FROM_CONFIG(MaxExportRequestsInflight)
 
 #undef GET_FIELD_FROM_CONFIG
-
-                    if (uploaderConfig.HasMaxBatchAccumulationMilliseconds()) {
-                        uploaderParams.MaxBatchAccumulation = TDuration::MilliSeconds(uploaderConfig.GetMaxBatchAccumulationMilliseconds());
-                    }
                 }
 
                 wilsonUploader.reset(std::move(uploaderParams).CreateUploader());
@@ -964,6 +976,9 @@ void TBSNodeWardenInitializer::InitializeServices(NActors::TActorSystemSetup* se
         nodeWardenConfig->CacheVDisks = bsc.GetCacheVDisks();
         nodeWardenConfig->EnableVDiskCooldownTimeout = true;
     }
+    if (Config.HasDomainsConfig()) {
+        nodeWardenConfig->DomainsConfig.emplace(Config.GetDomainsConfig());
+    }
 
     ObtainTenantKey(&nodeWardenConfig->TenantKey, Config.GetKeyConfig());
     ObtainStaticKey(&nodeWardenConfig->StaticKey);
@@ -998,38 +1013,40 @@ TStateStorageServiceInitializer::TStateStorageServiceInitializer(const TKikimrRu
     : IKikimrServicesInitializer(runConfig) {
 }
 
-void TStateStorageServiceInitializer::InitializeServices(NActors::TActorSystemSetup* setup,
-                                                         const NKikimr::TAppData* appData) {
-    // setup state storage stuff
-    const ui32 maxssid = 255;
-    bool knownss[maxssid + 1] = {};
-    for (const NKikimrConfig::TDomainsConfig::TStateStorage &ssconf : Config.GetDomainsConfig().GetStateStorage()) {
-        const ui32 ssid = ssconf.GetSSId();
-        Y_ABORT_UNLESS(ssid <= maxssid);
-        knownss[ssid] = true;
+void TStateStorageServiceInitializer::InitializeServices(NActors::TActorSystemSetup* setup, const NKikimr::TAppData* appData) {
+    bool found = false;
 
-        TIntrusivePtr<TStateStorageInfo> ssrInfo;
-        TIntrusivePtr<TStateStorageInfo> ssbInfo;
-        TIntrusivePtr<TStateStorageInfo> sbrInfo;
+    TIntrusivePtr<TStateStorageInfo> ssrInfo;
+    TIntrusivePtr<TStateStorageInfo> ssbInfo;
+    TIntrusivePtr<TStateStorageInfo> sbrInfo;
+
+    for (const NKikimrConfig::TDomainsConfig::TStateStorage &ssconf : Config.GetDomainsConfig().GetStateStorage()) {
+        Y_ABORT_UNLESS(ssconf.GetSSId() == 1);
+        found = true;
 
         BuildStateStorageInfos(ssconf, ssrInfo, ssbInfo, sbrInfo);
 
         StartLocalStateStorageReplicas(CreateStateStorageReplica, ssrInfo.Get(), appData->SystemPoolId, *setup);
         StartLocalStateStorageReplicas(CreateStateStorageBoardReplica, ssbInfo.Get(), appData->SystemPoolId, *setup);
         StartLocalStateStorageReplicas(CreateSchemeBoardReplica, sbrInfo.Get(), appData->SystemPoolId, *setup);
+    }
+    if (!found) {
+        auto stubInfo = MakeIntrusive<TStateStorageInfo>();
+        stubInfo->NToSelect = 1;
+        stubInfo->Rings.push_back(TStateStorageInfo::TRing{
+            .IsDisabled = false,
+            .UseRingSpecificNodeSelection = false,
+            .Replicas{
+                TActorId()
+            }
+        });
+        stubInfo->StateStorageVersion = 0;
+        ssrInfo = ssbInfo = sbrInfo = stubInfo;
+    }
 
-        setup->LocalServices.push_back(std::pair<TActorId, TActorSetupCmd>(MakeStateStorageProxyID(ssid),
-                                                                           TActorSetupCmd(CreateStateStorageProxy(ssrInfo.Get(), ssbInfo.Get(), sbrInfo.Get()),
-                                                                                          TMailboxType::ReadAsFilled,
-                                                                                          appData->SystemPoolId)));
-    }
-    for (ui32 ssid = 0; ssid <= maxssid; ++ssid) {
-        if (!knownss[ssid])
-            setup->LocalServices.push_back(std::pair<TActorId, TActorSetupCmd>(MakeStateStorageProxyID(ssid),
-                                                                               TActorSetupCmd(CreateStateStorageProxyStub(),
-                                                                                              TMailboxType::HTSwap,
-                                                                                              appData->SystemPoolId)));
-    }
+    setup->LocalServices.push_back(std::pair<TActorId, TActorSetupCmd>(MakeStateStorageProxyID(),
+        TActorSetupCmd(CreateStateStorageProxy(ssrInfo, ssbInfo, sbrInfo),
+        TMailboxType::ReadAsFilled, appData->SystemPoolId)));
 
     setup->LocalServices.emplace_back(
         TActorId(),
@@ -2111,7 +2128,7 @@ void TKqpServiceInitializer::InitializeServices(NActors::TActorSystemSetup* setu
 
         auto kqpProxySharedResources = std::make_shared<NKqp::TKqpProxySharedResources>();
 
-        // Crate resource manager
+        // Create resource manager
         auto rm = NKqp::CreateKqpResourceManagerActor(Config.GetTableServiceConfig().GetResourceManager(), nullptr,
             {}, kqpProxySharedResources);
         setup->LocalServices.push_back(std::make_pair(
@@ -2320,8 +2337,7 @@ TTxProxyInitializer::TTxProxyInitializer(const TKikimrRunConfig &runConfig)
 
 TVector<ui64> TTxProxyInitializer::CollectAllAllocatorsFromAllDomains(const TAppData *appData) {
     TVector<ui64> allocators;
-    for (auto it: appData->DomainsInfo->Domains) {
-        auto &domain = it.second;
+    if (const auto& domain = appData->DomainsInfo->Domain) {
         for (auto tabletId: domain->TxAllocators) {
             allocators.push_back(tabletId);
         }
@@ -2432,16 +2448,13 @@ void THttpProxyServiceInitializer::InitializeServices(NActors::TActorSystemSetup
 
 
 TConfigsDispatcherInitializer::TConfigsDispatcherInitializer(const TKikimrRunConfig& runConfig)
-   : IKikimrServicesInitializer(runConfig)
-   , Labels(runConfig.Labels)
-   , InitialCmsConfig(runConfig.InitialCmsConfig)
-   , InitialCmsYamlConfig(runConfig.InitialCmsYamlConfig)
-   , ConfigInitInfo(runConfig.ConfigInitInfo)
+    : IKikimrServicesInitializer(runConfig)
+    , ConfigsDispatcherInitInfo(runConfig.ConfigsDispatcherInitInfo)
 {
 }
 
 void TConfigsDispatcherInitializer::InitializeServices(NActors::TActorSystemSetup* setup, const NKikimr::TAppData* appData) {
-    IActor* actor = NConsole::CreateConfigsDispatcher(Config, Labels, InitialCmsConfig, InitialCmsYamlConfig, ConfigInitInfo);
+    IActor* actor = NConsole::CreateConfigsDispatcher(ConfigsDispatcherInitInfo);
     setup->LocalServices.push_back(std::pair<TActorId, TActorSetupCmd>(
             NConsole::MakeConfigsDispatcherID(NodeId),
             TActorSetupCmd(actor, TMailboxType::HTSwap, appData->UserPoolId)));
@@ -2676,6 +2689,10 @@ void TLocalPgWireServiceInitializer::InitializeServices(NActors::TActorSystemSet
 
     if (Config.GetLocalPgWireConfig().HasAddress()) {
         settings.Address = Config.GetLocalPgWireConfig().GetAddress();
+    }
+
+    if (Config.GetLocalPgWireConfig().HasTcpNotDelay()) {
+        settings.TcpNotDelay = Config.GetLocalPgWireConfig().GetTcpNotDelay();
     }
 
     setup->LocalServices.emplace_back(

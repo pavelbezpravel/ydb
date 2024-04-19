@@ -1,9 +1,13 @@
 #pragma once
 
 #include <ydb/core/protos/flat_tx_scheme.pb.h>
+#include <ydb/core/protos/replication.pb.h>
 
 #include <ydb/core/testlib/actors/test_runtime.h>
 #include <ydb/core/scheme/scheme_pathid.h>
+#include <ydb/core/protos/flat_scheme_op.pb.h>
+#include <ydb/core/protos/follower_group.pb.h>
+#include <ydb/core/protos/subdomains.pb.h>
 
 #include <functional>
 
@@ -114,6 +118,8 @@ namespace NLs {
         NKikimrSchemeOp::TTTLSettings::EUnit columnUnit = NKikimrSchemeOp::TTTLSettings::UNIT_AUTO);
     TCheckFunc HasTtlDisabled();
     TCheckFunc IsBackupTable(bool value);
+    TCheckFunc ReplicationMode(NKikimrSchemeOp::TTableReplicationConfig::EReplicationMode mode);
+    TCheckFunc ReplicationState(NKikimrReplication::TReplicationState::StateCase state);
 
     TCheckFunc HasColumnTableSchemaPreset(const TString& presetName);
     TCheckFunc HasColumnTableSchemaVersion(ui64 schemaVersion);

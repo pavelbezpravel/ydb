@@ -5,6 +5,7 @@
 #include "blobs_action/storages_manager/manager.h"
 #include "hooks/abstract/abstract.h"
 #include "engines/column_engine_logs.h"
+#include "export/manager/manager.h"
 #include <ydb/core/tx/columnshard/blobs_action/blob_manager_db.h>
 #include <ydb/core/tx/columnshard/transactions/locks_db.h>
 
@@ -198,6 +199,15 @@ bool TTxInit::ReadEverything(TTransactionContext& txc, const TActorContext& ctx)
     }
 
     {
+        TMemoryProfileGuard g("TTxInit/NDataSharing::TExportsManager");
+        auto local = std::make_shared<NOlap::NExport::TExportsManager>();
+        if (!local->Load(txc.DB)) {
+            return false;
+        }
+        Self->ExportsManager = local;
+    }
+
+    {
         TMemoryProfileGuard g("TTxInit/NDataSharing::TSessionsManager");
         auto local = std::make_shared<NOlap::NDataSharing::TSessionsManager>();
         if (!local->Load(txc.DB, Self->TablesManager.GetPrimaryIndexAsOptional<NOlap::TColumnEngineForLogs>())) {
@@ -381,7 +391,7 @@ bool TTxInitSchema::Execute(TTransactionContext& txc, const TActorContext&) {
 }
 
 void TTxInitSchema::Complete(const TActorContext& ctx) {
-    LOG_S_DEBUG("TxInitSchema.Complete at tablet " << Self->TabletID();)
+    LOG_S_DEBUG("TxInitSchema.Complete at tablet " << Self->TabletID(););
     Self->Execute(new TTxUpdateSchema(Self), ctx);
 }
 

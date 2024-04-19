@@ -4,15 +4,16 @@
 
 #include <yt/yt/client/cypress_client/public.h>
 
+#include <yt/yt/client/tablet_client/public.h>
+
 #include <yt/yt/client/transaction_client/public.h>
 
 #include <yt/yt/core/misc/range.h>
 
 #include <library/cpp/yt/misc/enum.h>
+#include <library/cpp/yt/misc/strong_typedef.h>
 
 #include <util/generic/size_literals.h>
-
-#include <initializer_list>
 
 namespace NYT::NTableClient {
 
@@ -121,6 +122,7 @@ extern const TString RowIndexColumnName;
 extern const TString RangeIndexColumnName;
 extern const TString TabletIndexColumnName;
 extern const TString TimestampColumnName;
+extern const TString TtlColumnName;
 extern const TString CumulativeDataWeightColumnName;
 extern const TString EmptyValueColumnName;
 extern const TString PrimaryLockName;
@@ -299,7 +301,7 @@ class TKeyComparer;
 struct TColumnRenameDescriptor;
 using TColumnRenameDescriptors = std::vector<TColumnRenameDescriptor>;
 
-class TStableName;
+YT_DEFINE_STRONG_TYPEDEF(TColumnStableName, TString);
 
 class TColumnSchema;
 
@@ -352,6 +354,8 @@ DECLARE_REFCOUNTED_CLASS(TKeyPrefixFilterWriterConfig)
 DECLARE_REFCOUNTED_CLASS(TDictionaryCompressionConfig)
 
 DECLARE_REFCOUNTED_CLASS(TBatchHunkReaderConfig)
+
+DECLARE_REFCOUNTED_CLASS(TDictionaryCompressionSessionConfig)
 
 DECLARE_REFCOUNTED_CLASS(TTableReaderConfig)
 DECLARE_REFCOUNTED_CLASS(TTableWriterConfig)
@@ -424,6 +428,9 @@ static constexpr TMasterTableSchemaId NullTableSchemaId = TMasterTableSchemaId()
 using TDynamicTableKeyMask = ui64;
 
 static_assert(sizeof(TDynamicTableKeyMask) * 8 == MaxKeyColumnCountInDynamicTable);
+
+// Function that compares two TUnversionedValue values.
+using TUUComparerSignature = int(const TUnversionedValue*, const TUnversionedValue*, int);
 
 ////////////////////////////////////////////////////////////////////////////////
 

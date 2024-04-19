@@ -1,6 +1,9 @@
 #pragma once
 
 #include <ydb/core/protos/grpc.pb.h>
+#include <ydb/core/protos/msgbus.pb.h>
+#include <ydb/core/protos/msgbus_pq.pb.h>
+#include <ydb/core/protos/msgbus_kv.pb.h>
 
 #include <util/datetime/base.h>
 #include <ydb/library/grpc/client/grpc_common.h>
@@ -62,7 +65,6 @@ namespace NKikimr {
             // ADMIN INTERNAL INTERFACE
             /////////////////////////////////////////////////////////////////////////////////////////////////
             void SchemeInitRoot(const NKikimrClient::TSchemeInitRoot& request, TResponseCallback callback);
-            void BSAdm(const NKikimrClient::TBSAdm& request, TResponseCallback callback);
             void BlobStorageConfig(const NKikimrClient::TBlobStorageConfigRequest& request, TResponseCallback callback);
 
             void ResolveNode(const NKikimrClient::TResolveNodeRequest& request, TResponseCallback callback);
@@ -112,11 +114,6 @@ namespace NKikimr {
             /////////////////////////////////////////////////////////////////////////////////////////////////
             void BlobStorageLoadRequest(const NKikimrClient::TBsTestLoadRequest& request, TResponseCallback callback);
             void BlobStorageGetRequest(const NKikimrClient::TBsGetRequest& request, TResponseCallback callback);
-
-            /////////////////////////////////////////////////////////////////////////////////////////////////
-            // DATASHARD LOAD TEST
-            /////////////////////////////////////////////////////////////////////////////////////////////////
-            void DataShardLoadRequest(const NKikimrClient::TDsTestLoadRequest& request, TResponseCallback callback);
 
             /////////////////////////////////////////////////////////////////////////////////////////////////
             // HTTP INTERFACE

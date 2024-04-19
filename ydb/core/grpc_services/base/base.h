@@ -344,7 +344,7 @@ struct TRequestAuxSettings {
     TRateLimiterMode RlMode = TRateLimiterMode::Off;
     void (*CustomAttributeProcessor)(const TSchemeBoardEvents::TDescribeSchemeResult& schemeData, ICheckerIface*) = nullptr;
     TAuditMode AuditMode = TAuditMode::Off;
-    NJaegerTracing::TRequestDiscriminator RequestDiscriminator = NJaegerTracing::TRequestDiscriminator::EMPTY;
+    NJaegerTracing::ERequestType RequestType = NJaegerTracing::ERequestType::UNSPECIFIED;
 };
 
 class TGRpcRequestProxySimple;
@@ -359,7 +359,6 @@ class IRequestProxyCtx
     friend class TGRpcRequestProxySimple;
     friend class TGRpcRequestProxyHandleMethods;
 private:
-    virtual void ReplyUnavaliable() = 0;
     virtual void ReplyWithYdbStatus(Ydb::StatusIds::StatusCode status) = 0;
 public:
     virtual ~IRequestProxyCtx() = default;
@@ -373,12 +372,15 @@ public:
     virtual void RaiseIssue(const NYql::TIssue& issue) = 0;
     virtual void RaiseIssues(const NYql::TIssues& issues) = 0;
 
-    //tracing
+    // tracing
     virtual void StartTracing(NWilson::TSpan&& span) = 0;
-    virtual void LegacyFinishSpan() = 0;
+    virtual void FinishSpan() = 0;
+    // Returns pointer to a state that denotes whether this request ever been a subject
+    // to tracing decision. CAN be nullptr
+    virtual bool* IsTracingDecided() = 0;
 
     // Used for per-type sampling
-    virtual const NJaegerTracing::TRequestDiscriminator& GetRequestDiscriminator() const {
+    virtual NJaegerTracing::TRequestDiscriminator GetRequestDiscriminator() const {
         return NJaegerTracing::TRequestDiscriminator::EMPTY;
     };
 
@@ -446,9 +448,6 @@ public:
         Ydb::StatusIds::StatusCode status) = 0;
     // Legacy, do not use for modern code
     virtual void SendResult(const google::protobuf::Message& result, Ydb::StatusIds::StatusCode status,
-        const google::protobuf::RepeatedPtrField<TYdbIssueMessageType>& message) = 0;
-    // Legacy, do not use for modern code
-    virtual void SendResult(Ydb::StatusIds::StatusCode status,
         const google::protobuf::RepeatedPtrField<TYdbIssueMessageType>& message) = 0;
 };
 
@@ -520,7 +519,10 @@ public:
     }
 
     void StartTracing(NWilson::TSpan&& /*span*/) override {}
-    void LegacyFinishSpan() override {}
+    void FinishSpan() override {}
+    bool* IsTracingDecided() override {
+        return nullptr;
+    }
 
     void UpdateAuthState(NYdbGrpc::TAuthState::EAuthState state) override {
         State_.State = state;
@@ -590,7 +592,7 @@ public:
     }
 
     void ReplyUnauthenticated(const TString&) override;
-    void ReplyUnavaliable() override;
+    void ReplyUnavaliable();
     void ReplyWithYdbStatus(Ydb::StatusIds::StatusCode status) override {
         switch (status) {
             case Ydb::StatusIds::UNAVAILABLE:
@@ -735,13 +737,6 @@ class TGRpcRequestBiStreamWrapper
     , public TEventLocal<TGRpcRequestBiStreamWrapper<TRpcId, TReq, TResp, RlMode>, TRpcId>
 {
 private:
-    void ReplyUnavaliable() override {
-        Ctx_->Attach(TActorId());
-        TResponse resp;
-        FillYdbStatus(resp, IssueManager_.GetIssues(), Ydb::StatusIds::UNAVAILABLE);
-        Ctx_->WriteAndFinish(std::move(resp), grpc::Status::OK);
-    }
-
     void ReplyWithYdbStatus(Ydb::StatusIds::StatusCode status) override {
         Ctx_->Attach(TActorId());
         TResponse resp;
@@ -905,8 +900,12 @@ public:
         Span_ = std::move(span);
     }
 
-    void LegacyFinishSpan() override {
+    void FinishSpan() override {
         Span_.End();
+    }
+
+    bool* IsTracingDecided() override {
+        return &IsTracingDecided_;
     }
 
     // IRequestCtxBase
@@ -927,6 +926,7 @@ private:
     bool RlAllowed_;
     IGRpcProxyCounters::TPtr Counters_;
     NWilson::TSpan Span_;
+    bool IsTracingDecided_ = false;
 };
 
 template <typename TDerived>
@@ -942,22 +942,6 @@ public:
         auto resp = self->CreateResponseMessage();
         resp->mutable_operation()->CopyFrom(operation);
         self->Reply(resp, operation.status());
-    }
-
-    void SendResult(Ydb::StatusIds::StatusCode status,
-        const google::protobuf::RepeatedPtrField<TYdbIssueMessageType>& message) override
-    {
-        auto self = Derived();
-        self->FinishRequest();
-        auto resp = self->CreateResponseMessage();
-        auto deferred = resp->mutable_operation();
-        deferred->set_ready(true);
-        deferred->set_status(status);
-        deferred->mutable_issues()->MergeFrom(message);
-        if (self->CostInfo) {
-            deferred->mutable_cost_info()->Swap(self->CostInfo);
-        }
-        self->Reply(resp, status);
     }
 
     void SendResult(const google::protobuf::Message& result,
@@ -1141,18 +1125,14 @@ public:
         Ctx_->UseDatabase(database);
     }
 
-    void ReplyUnavaliable() override {
-        TResponse* resp = CreateResponseMessage();
-        TCommonResponseFiller<TResp, TDerived::IsOp>::Fill(*resp, IssueManager.GetIssues(), CostInfo, Ydb::StatusIds::UNAVAILABLE);
-        FinishRequest();
-        Reply(resp, Ydb::StatusIds::UNAVAILABLE);
-    }
-
     void ReplyWithYdbStatus(Ydb::StatusIds::StatusCode status) override {
         TResponse* resp = CreateResponseMessage();
         TCommonResponseFiller<TResponse, TDerived::IsOp>::Fill(*resp, IssueManager.GetIssues(), CostInfo, status);
         FinishRequest();
         Reply(resp, status);
+        if (Ctx_->IsStreamCall()) {
+            Ctx_->FinishStreamingOk();
+        }
     }
 
     TString GetPeerName() const override {
@@ -1319,7 +1299,13 @@ public:
         Span_ = std::move(span);
     }
 
-    void LegacyFinishSpan() override {}
+    void FinishSpan() override {
+        Span_.End();
+    }
+
+    bool* IsTracingDecided() override {
+        return &IsTracingDecided_;
+    }
 
     void ReplyGrpcError(grpc::StatusCode code, const TString& msg, const TString& details = "") {
         Ctx_->ReplyError(code, msg, details);
@@ -1378,6 +1364,7 @@ private:
     TAuditLogParts AuditLogParts;
     TAuditLogHook AuditLogHook;
     bool RequestFinished = false;
+    bool IsTracingDecided_ = false;
 };
 
 template <ui32 TRpcId, typename TReq, typename TResp, bool IsOperation, typename TDerived>
@@ -1422,7 +1409,7 @@ class TGrpcRequestCall
     using TRequestIface = typename std::conditional<IsOperation, IRequestOpCtx, IRequestNoOpCtx>::type;
 
 public:
-    static IActor* CreateRpcActor(typename std::conditional<IsOperation, IRequestOpCtx, IRequestNoOpCtx>::type* msg);
+    static IActor* CreateRpcActor(TRequestIface* msg);
     static constexpr bool IsOp = IsOperation;
 
     using TBase = std::conditional_t<TProtoHasValidate<TReq>::Value,
@@ -1439,8 +1426,6 @@ public:
     { }
 
     void Pass(const IFacilityProvider& facility) override {
-        this->Span_.End();
-
         try {
             PassMethod(std::move(std::unique_ptr<TRequestIface>(this)), facility);
         } catch (const std::exception& ex) {
@@ -1464,8 +1449,11 @@ public:
         }
     }
 
-    const NJaegerTracing::TRequestDiscriminator& GetRequestDiscriminator() const override {
-        return AuxSettings.RequestDiscriminator;
+    NJaegerTracing::TRequestDiscriminator GetRequestDiscriminator() const override {
+        return {
+            .RequestType = AuxSettings.RequestType,
+            .Database = TBase::GetDatabaseName(),
+        };
     }
 
     // IRequestCtxBaseMtSafe

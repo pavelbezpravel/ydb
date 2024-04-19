@@ -310,6 +310,24 @@ class MDBExtension(ExtensionPoint):
         kikimr.compute_plane.fq_config['gateways']['generic']['mdb_gateway'] = self.endpoint   # v1
 
 
+class YdbMvpExtension(ExtensionPoint):
+
+    def __init__(self, endpoint: str, use_ssl=False):
+        MDBExtension.__init__.__annotations__ = {
+            'endpoint': str,
+            'use_ssl': bool
+        }
+        super().__init__()
+        self.endpoint = endpoint
+        self.use_ssl = use_ssl
+
+    def is_applicable(self, request):
+        return True
+
+    def apply_to_kikimr(self, request, kikimr):
+        kikimr.compute_plane.qs_config['generic']['ydb_mvp_endpoint'] = self.endpoint
+
+
 class TokenAccessorExtension(ExtensionPoint):
 
     def __init__(self, endpoint: str, hmac_secret_file: str, use_ssl=False):
@@ -368,7 +386,10 @@ def start_kikimr(request, kikimr_extensions):
         kikimr.stop_mvp_mock_server()
 
 
-yq_v1 = pytest.mark.yq_version('v1')
-yq_v2 = pytest.mark.yq_version('v2')
-yq_all = pytest.mark.yq_version('v1', 'v2')
-yq_stats_full = pytest.mark.stats_mode('STATS_MODE_FULL')
+YQV1_VERSION_NAME = 'v1'
+YQV2_VERSION_NAME = 'v2'
+YQ_STATS_FULL = 'STATS_MODE_FULL'
+
+yq_v1 = pytest.mark.yq_version(YQV1_VERSION_NAME)
+yq_v2 = pytest.mark.yq_version(YQV2_VERSION_NAME)
+yq_all = pytest.mark.yq_version(YQV1_VERSION_NAME, YQV2_VERSION_NAME)

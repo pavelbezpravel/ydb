@@ -29,15 +29,21 @@ std::shared_ptr<IBlobsReadingAction> TOperator::DoStartReadingAction() {
 
 std::shared_ptr<IBlobsGCAction> TOperator::DoStartGCAction(const std::shared_ptr<TRemoveGCCounters>& counters) const {
     std::deque<TUnifiedBlobId> draftBlobIds;
+    AFL_VERIFY(!!TabletActorId);
     TBlobsCategories categories(TTabletId(0));
     {
         TTabletsByBlob deleteBlobIds;
         if (!GCInfo->ExtractForGC(draftBlobIds, deleteBlobIds, 100000)) {
+            AFL_DEBUG(NKikimrServices::TX_COLUMNSHARD)("event", "start_gc_skipped")("reason", "cannot_extract");
             return nullptr;
         }
         categories = GetSharedBlobs()->BuildRemoveCategories(std::move(deleteBlobIds));
     }
     auto gcTask = std::make_shared<TGCTask>(GetStorageId(), std::move(draftBlobIds), GetCurrentOperator(), std::move(categories), counters);
+    if (gcTask->IsEmpty()) {
+        AFL_DEBUG(NKikimrServices::TX_COLUMNSHARD)("event", "start_gc_skipped")("reason", "task_empty");
+        return nullptr;
+    }
     TActorContext::AsActorContext().Register(new TGarbageCollectionActor(gcTask, TabletActorId, GetSelfTabletId()));
     return gcTask;
 }
@@ -49,10 +55,25 @@ void TOperator::InitNewExternalOperator(const NColumnShard::NTiers::TManager* ti
     } else {
         settings.SetEndpoint("nowhere");
     }
+    {
+        TGuard<TSpinLock> changeLock(ChangeOperatorLock);
+        if (CurrentS3Settings && CurrentS3Settings->SerializeAsString() == settings.SerializeAsString()) {
+            return;
+        }
+    }
     auto extStorageConfig = NWrappers::NExternalStorage::IExternalStorageConfig::Construct(settings);
     AFL_VERIFY(extStorageConfig);
     auto extStorageOperator = extStorageConfig->ConstructStorageOperator(false);
-    extStorageOperator->InitReplyAdapter(std::make_shared<NOlap::NBlobOperations::NTier::TRepliesAdapter>());
+    extStorageOperator->InitReplyAdapter(std::make_shared<NOlap::NBlobOperations::NTier::TRepliesAdapter>(GetStorageId()));
+    TGuard<TSpinLock> changeLock(ChangeOperatorLock);
+    CurrentS3Settings = settings;
+    ExternalStorageOperator = extStorageOperator;
+}
+
+void TOperator::InitNewExternalOperator() {
+    AFL_VERIFY(InitializationConfig);
+    auto extStorageOperator = InitializationConfig->ConstructStorageOperator(false);
+    extStorageOperator->InitReplyAdapter(std::make_shared<NOlap::NBlobOperations::NTier::TRepliesAdapter>(GetStorageId()));
     TGuard<TSpinLock> changeLock(ChangeOperatorLock);
     ExternalStorageOperator = extStorageOperator;
 }
@@ -64,7 +85,16 @@ TOperator::TOperator(const TString& storageId, const NColumnShard::TColumnShard&
     InitNewExternalOperator(shard.GetTierManagerPointer(storageId));
 }
 
-void TOperator::DoOnTieringModified(const std::shared_ptr<NColumnShard::TTiersManager>& tiers) {
+TOperator::TOperator(const TString& storageId, const TActorId& shardActorId, const std::shared_ptr<NWrappers::IExternalStorageConfig>& storageConfig,
+    const std::shared_ptr<NDataSharing::TStorageSharedBlobsManager>& storageSharedBlobsManager)
+    : TBase(storageId, storageSharedBlobsManager)
+    , TabletActorId(shardActorId)
+    , InitializationConfig(storageConfig)
+{
+    InitNewExternalOperator();
+}
+
+void TOperator::DoOnTieringModified(const std::shared_ptr<NColumnShard::ITiersManager>& tiers) {
     auto* tierManager = tiers->GetManagerOptional(TBase::GetStorageId());
     if (tierManager) {
         InitNewExternalOperator(tierManager);

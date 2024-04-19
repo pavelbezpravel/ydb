@@ -452,6 +452,7 @@ TMkqlCommonCallableCompiler::TShared::TShared() {
 
         {"Just", &TProgramBuilder::NewOptional},
         {"Exists", &TProgramBuilder::Exists},
+        {"BlockExists", &TProgramBuilder::BlockExists},
 
         {"Pickle", &TProgramBuilder::Pickle},
         {"StablePickle", &TProgramBuilder::StablePickle},
@@ -2243,6 +2244,8 @@ TMkqlCommonCallableCompiler::TShared::TShared() {
         "CallableTypeComponents",
         "CallableArgument",
         "CallableTypeHandle",
+        "PgTypeName",
+        "PgTypeHandle",
         "WorldCode",
         "AtomCode",
         "ListCode",
@@ -2683,12 +2686,22 @@ TMkqlCommonCallableCompiler::TShared::TShared() {
         return ctx.ProgramBuilder.PgClone(input, dependentNodes);
     });
 
-     AddCallable("PgTableContent", [](const TExprNode& node, TMkqlBuildContext& ctx) {
+    AddCallable("PgTableContent", [](const TExprNode& node, TMkqlBuildContext& ctx) {
         auto returnType = BuildType(node, *node.GetTypeAnn(), ctx.ProgramBuilder);
         return ctx.ProgramBuilder.PgTableContent(
             node.Child(0)->Content(),
             node.Child(1)->Content(),
             returnType);
+    });
+
+    AddCallable("PgToRecord", [](const TExprNode& node, TMkqlBuildContext& ctx) {
+        auto input = MkqlBuildExpr(*node.Child(0), ctx);
+        TVector<std::pair<std::string_view, std::string_view>> members;
+        for (auto child : node.Child(1)->Children()) {
+            members.push_back({child->Head().Content(), child->Tail().Content()});
+        }
+
+        return ctx.ProgramBuilder.PgToRecord(input, members);
     });
 
     AddCallable("WithContext", [](const TExprNode& node, TMkqlBuildContext& ctx) {
@@ -2710,6 +2723,12 @@ TMkqlCommonCallableCompiler::TShared::TShared() {
         auto arg = MkqlBuildExpr(*node.Child(0), ctx);
         auto targetType = BuildType(node, *node.Child(1)->GetTypeAnn()->Cast<TTypeExprType>()->GetType(), ctx.ProgramBuilder);
         return ctx.ProgramBuilder.BlockBitCast(arg, targetType);
+    });
+
+    AddCallable("BlockMember", [](const TExprNode& node, TMkqlBuildContext& ctx) {
+        const auto structObj = MkqlBuildExpr(node.Head(), ctx);
+        const auto name = node.Tail().Content();
+        return ctx.ProgramBuilder.BlockMember(structObj, name);
     });
 
     AddCallable("BlockNth", [](const TExprNode& node, TMkqlBuildContext& ctx) {
@@ -2910,6 +2929,10 @@ TMkqlCommonCallableCompiler::TShared::TShared() {
     });
 
     AddCallable(SkippableCallables, [](const TExprNode& node, TMkqlBuildContext& ctx) {
+        return MkqlBuildExpr(node.Head(), ctx);
+    });
+
+    AddCallable({ "AssumeStrict", "AssumeNonStrict", "Likely" }, [](const TExprNode& node, TMkqlBuildContext& ctx) {
         return MkqlBuildExpr(node.Head(), ctx);
     });
 

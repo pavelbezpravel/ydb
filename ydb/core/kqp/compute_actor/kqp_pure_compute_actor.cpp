@@ -12,12 +12,14 @@ bool TKqpComputeActor::IsDebugLogEnabled(const TActorSystem* actorSystem) {
 
 TKqpComputeActor::TKqpComputeActor(const TActorId& executerId, ui64 txId, NDqProto::TDqTask* task,
     IDqAsyncIoFactory::TPtr asyncIoFactory,
-    const NKikimr::NMiniKQL::IFunctionRegistry* functionRegistry,
     const TComputeRuntimeSettings& settings, const TComputeMemoryLimits& memoryLimits,
-    NWilson::TTraceId traceId, TIntrusivePtr<NActors::TProtoArenaHolder> arena)
-    : TBase(executerId, txId, task, std::move(asyncIoFactory), functionRegistry, settings, memoryLimits, /* ownMemoryQuota = */ true, /* passExceptions = */ true, /*taskCounters = */ nullptr, std::move(traceId), std::move(arena))
+    NWilson::TTraceId traceId, TIntrusivePtr<NActors::TProtoArenaHolder> arena,
+    const std::optional<TKqpFederatedQuerySetup>& federatedQuerySetup)
+    : TBase(executerId, txId, task, std::move(asyncIoFactory), settings, memoryLimits, /* ownMemoryQuota = */ true, /* passExceptions = */ true, /*taskCounters = */ nullptr, std::move(traceId), std::move(arena))
     , ComputeCtx(settings.StatsMode)
+    , FederatedQuerySetup(federatedQuerySetup)
 {
+    InitializeTask();
     if (GetTask().GetMeta().Is<NKikimrTxDataShard::TKqpTransaction::TScanTaskMeta>()) {
         Meta.ConstructInPlace();
         YQL_ENSURE(GetTask().GetMeta().UnpackTo(Meta.Get()), "Invalid task meta: " << GetTask().GetMeta().DebugString());
@@ -44,7 +46,7 @@ void TKqpComputeActor::DoBootstrap() {
     execCtx.RandomProvider = TAppData::RandomProvider.Get();
     execCtx.TimeProvider = TAppData::TimeProvider.Get();
     execCtx.ComputeCtx = &ComputeCtx;
-    execCtx.ComputationFactory = NMiniKQL::GetKqpActorComputeFactory(&ComputeCtx);
+    execCtx.ComputationFactory = NMiniKQL::GetKqpActorComputeFactory(&ComputeCtx, FederatedQuerySetup);
     execCtx.ApplyCtx = nullptr;
     execCtx.TypeEnv = nullptr;
     execCtx.PatternCache = GetKqpResourceManager()->GetPatternCache();
@@ -276,12 +278,12 @@ void TKqpComputeActor::HandleExecute(TEvKqpCompute::TEvScanError::TPtr& ev) {
 
 IActor* CreateKqpComputeActor(const TActorId& executerId, ui64 txId, NDqProto::TDqTask* task,
     IDqAsyncIoFactory::TPtr asyncIoFactory,
-    const NKikimr::NMiniKQL::IFunctionRegistry* functionRegistry,
     const TComputeRuntimeSettings& settings, const TComputeMemoryLimits& memoryLimits,
-    NWilson::TTraceId traceId, TIntrusivePtr<NActors::TProtoArenaHolder> arena)
+    NWilson::TTraceId traceId, TIntrusivePtr<NActors::TProtoArenaHolder> arena,
+    const std::optional<TKqpFederatedQuerySetup>& federatedQuerySetup)
 {
     return new TKqpComputeActor(executerId, txId, task, std::move(asyncIoFactory),
-        functionRegistry, settings, memoryLimits, std::move(traceId), std::move(arena));
+        settings, memoryLimits, std::move(traceId), std::move(arena), federatedQuerySetup);
 }
 
 } // namespace NKqp

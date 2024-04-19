@@ -66,14 +66,18 @@ namespace NKikimr {
         // this value is multiply of AppendBlockSize and is calculated from Config->MinHugeBlobSize
         const ui32 MinREALHugeBlobInBytes;
         const std::shared_ptr<const THugeSlotsMap> HugeSlotsMap;
+        const bool AddHeader;
 
-        // check whether this blob is huge one; userPartSize doesn't include any metadata stored along with blob
+        // check whether this NEW blob is huge one; userPartSize doesn't include any metadata stored along with blob
         bool IsHugeBlob(TBlobStorageGroupType gtype, const TLogoBlobID& fullId) const;
 
-        THugeBlobCtx(ui32 minREALHugeBlobInBytes, const std::shared_ptr<const THugeSlotsMap> &hugeSlotsMap)
-            : MinREALHugeBlobInBytes(minREALHugeBlobInBytes)
+        THugeBlobCtx(ui32 minHugeBlobInBytes, ui32 appendBlockSize, const std::shared_ptr<const THugeSlotsMap> &hugeSlotsMap, bool addHeader)
+            : MinREALHugeBlobInBytes(minHugeBlobInBytes / appendBlockSize * appendBlockSize + 1)
             , HugeSlotsMap(hugeSlotsMap)
-        {}
+            , AddHeader(addHeader)
+        {
+            Y_ABORT_UNLESS(MinREALHugeBlobInBytes >= appendBlockSize);
+        }
     };
 
     using THugeBlobCtxPtr = std::shared_ptr<THugeBlobCtx>;

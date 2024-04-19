@@ -3,6 +3,7 @@
 #include <ydb/core/base/events.h>
 #include <ydb/core/scheme/scheme_pathid.h>
 #include <ydb/core/protos/statistics.pb.h>
+#include <ydb/core/util/count_min_sketch.h>
 #include <ydb/library/actors/core/events.h>
 
 namespace NKikimr {
@@ -17,15 +18,17 @@ struct TStatHyperLogLog {
     // TODO:
 };
 
-// TODO: other stats
+struct TStatCountMinSketch {
+    std::shared_ptr<TCountMinSketch> CountMin;
+};
+
 enum EStatType {
     SIMPLE = 0,
     HYPER_LOG_LOG = 1,
-    // TODO...
+    COUNT_MIN_SKETCH = 2,
 };
 
 struct TRequest {
-    EStatType StatType;
     TPathId PathId;
     std::optional<TString> ColumnName; // not used for simple stat
 };
@@ -33,7 +36,9 @@ struct TRequest {
 struct TResponse {
     bool Success = true;
     TRequest Req;
-    std::variant<TStatSimple, TStatHyperLogLog> Statistics;
+    TStatSimple Simple;
+    TStatHyperLogLog HyperLogLog;
+    TStatCountMinSketch CountMinSketch;
 };
 
 struct TEvStatistics {
@@ -57,10 +62,18 @@ struct TEvStatistics {
         EvStatisticsIsDisabled,
         EvPropagateStatisticsResponse,
 
+        EvStatTableCreationResponse,
+        EvSaveStatisticsQueryResponse,
+        EvLoadStatisticsQueryResponse,
+
+        EvScanTable,
+        EvScanTableResponse,
+
         EvEnd
     };
 
     struct TEvGetStatistics : public TEventLocal<TEvGetStatistics, EvGetStatistics> {
+        EStatType StatType;
         std::vector<TRequest> StatRequests;
     };
 
@@ -122,6 +135,42 @@ struct TEvStatistics {
         NKikimrStat::TEvPropagateStatisticsResponse,
         EvPropagateStatisticsResponse>
     {};
+
+    struct TEvStatTableCreationResponse : public TEventLocal<
+        TEvStatTableCreationResponse,
+        EvStatTableCreationResponse>
+    {
+        bool Success = true;
+    };
+
+    struct TEvSaveStatisticsQueryResponse : public TEventLocal<
+        TEvSaveStatisticsQueryResponse,
+        EvSaveStatisticsQueryResponse>
+    {
+        bool Success = true;
+    };
+
+    struct TEvLoadStatisticsQueryResponse : public TEventLocal<
+        TEvLoadStatisticsQueryResponse,
+        EvLoadStatisticsQueryResponse>
+    {
+        bool Success = true;
+        ui64 Cookie = 0;
+        std::optional<TString> Data;
+    };
+
+    struct TEvScanTable : public TEventPB<
+        TEvScanTable,
+        NKikimrStat::TEvScanTable,
+        EvScanTable>
+    {};
+
+    struct TEvScanTableResponse : public TEventPB<
+        TEvScanTableResponse,
+        NKikimrStat::TEvScanTableResponse,
+        EvScanTableResponse>
+    {};
+
 };
 
 } // NStat

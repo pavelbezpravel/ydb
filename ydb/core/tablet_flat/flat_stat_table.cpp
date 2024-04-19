@@ -9,14 +9,17 @@ namespace NTable {
 bool BuildStats(const TSubset& subset, TStats& stats, ui64 rowCountResolution, ui64 dataSizeResolution, IPages* env) {
     stats.Clear();
 
-    TPartDataStats iteratorStats = { };
+    TDataStats iteratorStats = { };
     TStatsIterator statsIterator(subset.Scheme->Keys);
+
+    // TODO: deal with resolution
 
     // Make index iterators for all parts
     bool started = true;
     for (const auto& part : subset.Flatten) {
         stats.IndexSize.Add(part->IndexesRawSize, part->Label.Channel());
-        TAutoPtr<TStatsScreenedPartIterator> iter = new TStatsScreenedPartIterator(part, env, subset.Scheme->Keys, part->Small, part->Large);
+        TAutoPtr<TStatsScreenedPartIterator> iter = new TStatsScreenedPartIterator(part, env, subset.Scheme->Keys, part->Small, part->Large, 
+            rowCountResolution, dataSizeResolution);
         auto ready = iter->Start();
         if (ready == EReady::Page) {
             started = false;

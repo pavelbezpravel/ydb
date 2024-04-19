@@ -97,6 +97,18 @@ private:
         return TStatus::Ok;
     }
 
+    TStatus HandleCreateSequence(NNodes::TKiCreateSequence node, TExprContext& ctx) override {
+        Y_UNUSED(ctx);
+        Y_UNUSED(node);
+        return TStatus::Ok;
+    }
+
+    TStatus HandleDropSequence(NNodes::TKiDropSequence node, TExprContext& ctx) override {
+        Y_UNUSED(ctx);
+        Y_UNUSED(node);
+        return TStatus::Ok;
+    }
+
     TStatus HandleModifyPermissions(TKiModifyPermissions node, TExprContext& ctx) override {
         ctx.AddError(TIssue(ctx.GetPosition(node.Pos()), TStringBuilder()
             << "ModifyPermissions is not yet implemented for intent determination transformer"));
@@ -474,6 +486,11 @@ public:
             return true;
         }
 
+        if (node.IsCallable(TKiCreateSequence::CallableName())
+            || node.IsCallable(TKiDropSequence::CallableName())) {
+            return true;
+        }
+
         if (node.IsCallable(TKiCreateUser::CallableName())
             || node.IsCallable(TKiAlterUser::CallableName())
             || node.IsCallable(TKiDropUser::CallableName())
@@ -550,6 +567,58 @@ public:
                 .Ptr();
     }
 
+    static TExprNode::TPtr MakeCreateSequence(const TExprNode::TPtr& node,
+            const NCommon::TWriteSequenceSettings& settings, const TKikimrKey& key, TExprContext& ctx)
+    {
+        YQL_ENSURE(settings.Mode);
+        auto mode = settings.Mode.Cast();
+        if (node->Child(3)->Content() != "Void") {
+            ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), "Creating sequence with data is not supported."));
+            return nullptr;
+        }
+
+        auto valueType = settings.ValueType.IsValid()
+            ? settings.ValueType.Cast()
+            : Build<TCoAtom>(ctx, node->Pos()).Value("bigint").Done();
+
+        auto temporary = settings.Temporary.IsValid()
+            ? settings.Temporary.Cast()
+            : Build<TCoAtom>(ctx, node->Pos()).Value("false").Done();
+
+        auto existringOk = (settings.Mode.Cast().Value() == "create_if_not_exists");
+
+        return Build<TKiCreateSequence>(ctx, node->Pos())
+            .World(node->Child(0))
+            .DataSink(node->Child(1))
+            .Sequence().Build(key.GetPGObjectId())
+            .ValueType(valueType)
+            .Temporary(temporary)
+            .ExistingOk<TCoAtom>()
+                .Value(existringOk)
+                .Build()
+            .SequenceSettings(settings.SequenceSettings.Cast())
+            .Settings(settings.Other)
+            .Done()
+            .Ptr();
+    }
+
+    static TExprNode::TPtr MakeDropSequence(const TExprNode::TPtr& node,
+            const NCommon::TWriteSequenceSettings& settings, const TKikimrKey& key, TExprContext& ctx)
+    {
+        bool missingOk = (settings.Mode.Cast().Value() == "drop_if_exists");
+
+        return Build<TKiDropSequence>(ctx, node->Pos())
+            .World(node->Child(0))
+            .DataSink(node->Child(1))
+            .Sequence().Build(key.GetPGObjectId())
+            .Settings(settings.Other)
+            .MissingOk<TCoAtom>()
+                .Value(missingOk)
+            .Build()
+            .Done()
+            .Ptr();
+    }
+
     bool RewriteIOExternal(const TKikimrKey& key, const TExprNode::TPtr& node, const TCoAtom& mode, TExprContext& ctx, TExprNode::TPtr& resultNode) {
         TKiDataSink dataSink(node->ChildPtr(1));
         auto& tableDesc = SessionCtx->Tables().GetTable(TString{dataSink.Cluster()}, key.GetTablePath());
@@ -612,19 +681,19 @@ public:
         return true;
     }
 
-    bool CheckIOOlap(const TKikimrKey& key, const TExprNode::TPtr& node, const TCoAtom& mode, TExprContext& ctx) {
+    bool CheckIOSinkTable(const TKikimrKey& key, const TExprNode::TPtr& node, const TCoAtom& mode, TExprContext& ctx) {
         TKiDataSink dataSink(node->ChildPtr(1));
         auto& tableDesc = SessionCtx->Tables().GetTable(TString{dataSink.Cluster()}, key.GetTablePath());
-        if (!tableDesc.Metadata || tableDesc.Metadata->Kind != EKikimrTableKind::Olap) {
-            return true;
-        }
-
-        if (mode != "replace" && mode != "drop" && mode != "drop_if_exists") {
-            ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), TStringBuilder() << "Write mode '" << static_cast<TStringBuf>(mode) << "' is not supported for olap tables."));
+        if (!tableDesc.Metadata) {
             return false;
         }
 
-        return true;
+        if (tableDesc.Metadata->Kind == EKikimrTableKind::Olap && mode != "replace" && mode != "drop" && mode != "drop_if_exists") {
+            ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), TStringBuilder() << "Write mode '" << static_cast<TStringBuf>(mode) << "' is not supported for olap tables."));
+            return true;
+        }
+
+        return false;
     }
 
     TExprNode::TPtr RewriteIO(const TExprNode::TPtr& node, TExprContext& ctx) override {
@@ -648,7 +717,7 @@ public:
                     return resultNode;
                 }
 
-                if (!CheckIOOlap(key, node, mode, ctx)) {
+                if (CheckIOSinkTable(key, node, mode, ctx)) {
                     return nullptr;
                 }
 
@@ -658,27 +727,37 @@ public:
 
                 auto returningColumns = Build<TCoAtomList>(ctx, node->Pos()).Done();
 
+                auto fillStar = [&]() {
+                    bool sysColumnsEnabled = SessionCtx->Config().SystemColumnsEnabled();
+
+                    auto dataSinkNode = node->Child(1);
+                    TKiDataSink dataSink(dataSinkNode);
+                    auto table = SessionCtx->Tables().EnsureTableExists(
+                        TString(dataSink.Cluster()),
+                        key.GetTablePath(), node->Pos(), ctx);
+
+                    returningColumns = BuildColumnsList(*table, node->Pos(), ctx, sysColumnsEnabled, true /*ignoreWriteOnlyColumns*/);
+                };
+
                 TVector<TExprBase> columnsToReturn;
                 for (const auto item : settings.ReturningList.Cast()) {
-                    auto pgResultNode = item.Cast<TCoPgResultItem>();
-                    const auto value = pgResultNode.ExpandedColumns().Cast<TCoAtom>().Value();
-                    if (value.empty()) {
-                        bool sysColumnsEnabled = SessionCtx->Config().SystemColumnsEnabled();
-
-                        auto dataSinkNode = node->Child(1);
-                        TKiDataSink dataSink(dataSinkNode);
-                        auto table = SessionCtx->Tables().EnsureTableExists(
-                            TString(dataSink.Cluster()),
-                            key.GetTablePath(), node->Pos(), ctx);
-
-                        returningColumns = BuildColumnsList(*table, node->Pos(), ctx, sysColumnsEnabled, true /*ignoreWriteOnlyColumns*/);
-
+                    if (item.Maybe<TCoPgResultItem>()) {
+                        auto pgResultNode = item.Cast<TCoPgResultItem>();
+                        const auto value = pgResultNode.ExpandedColumns().Cast<TCoAtom>().Value();
+                        if (value.empty()) {
+                            fillStar();
+                            break;
+                        } else {
+                            auto atom = Build<TCoAtom>(ctx, node->Pos())
+                                .Value(value)
+                                .Done();
+                            columnsToReturn.emplace_back(std::move(atom));
+                        }
+                    } else if (auto returningItem = item.Maybe<TCoReturningListItem>()) {
+                        columnsToReturn.push_back(returningItem.Cast().ColumnRef());
+                    } else if (auto returningStar = item.Maybe<TCoReturningStar>()) {
+                        fillStar();
                         break;
-                    } else {
-                        auto atom = Build<TCoAtom>(ctx, node->Pos())
-                            .Value(value)
-                            .Done();
-                        columnsToReturn.emplace_back(std::move(atom));
                     }
                 }
 
@@ -725,6 +804,7 @@ public:
                             .DataSink(node->Child(1))
                             .Table().Build(key.GetTablePath())
                             .Filter(settings.Filter.Cast())
+                            .ReturningColumns(returningColumns)
                             .Done()
                             .Ptr();
                     } else {
@@ -763,8 +843,21 @@ public:
                     : Build<TCoAtom>(ctx, node->Pos()).Value("table").Done(); // v0 support
                 auto mode = settings.Mode.Cast();
                 if (mode == "create" || mode == "create_if_not_exists" || mode == "create_or_replace") {
+                    if (node->Child(3)->Content() != "Void") {
+                        ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), "Creating table with data is not supported."));
+                        return nullptr;
+                    }
                     YQL_ENSURE(settings.Columns);
-                    YQL_ENSURE(!settings.Columns.Cast().Empty());
+                    if (settings.Columns.Cast().Empty()) {
+                        ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), "Creating table without columns is not supported."));
+                        return nullptr;
+                    }
+                    for (const auto& column : settings.Columns.Cast()) {
+                        if (column.Ptr()->ChildrenSize() < 2) {
+                            ctx.AddError(TIssue(ctx.GetPosition(node->Pos()), "Creating table with columns without type is not supported."));
+                            return nullptr;
+                        }
+                    }
 
                     const bool isExternalTable = settings.TableType && settings.TableType.Cast() == "externalTable";
                     if (!isExternalTable && !settings.PrimaryKey) {
@@ -1079,8 +1172,18 @@ public:
 
                 if (mode == "dropIndex") {
                     return MakePgDropObject(node, settings, key, ctx);
+                } else if (key.GetPGObjectType() == "pgSequence") {
+                    NCommon::TWriteSequenceSettings settings =
+                        NCommon::ParseSequenceSettings(TExprList(node->Child(4)), ctx);
+                    if (mode == "create" || mode == "create_if_not_exists") {
+                        return MakeCreateSequence(node, settings, key, ctx);
+                    } else if (mode == "drop" || mode == "drop_if_exists") {
+                        return MakeDropSequence(node, settings, key, ctx);
+                    } else {
+                        YQL_ENSURE(false, "unknown Sequence mode \"" << TString(mode) << "\"");
+                    }
                 } else {
-                    YQL_ENSURE(false, "unknown PGObject mode \"" << TString(mode) << "\"");
+                    YQL_ENSURE(false, "unknown PGObject with type: \"" << key.GetPGObjectType() << "\"");
                 }
             }
         }
@@ -1251,6 +1354,14 @@ IGraphTransformer::TStatus TKiSinkVisitorTransformer::DoTransform(TExprNode::TPt
 
     if (auto node = callable.Maybe<TKiReturningList>()) {
         return HandleReturningList(node.Cast(), ctx);
+    }
+
+    if (auto node = callable.Maybe<TKiCreateSequence>()) {
+        return HandleCreateSequence(node.Cast(), ctx);
+    }
+
+    if (auto node = callable.Maybe<TKiDropSequence>()) {
+        return HandleDropSequence(node.Cast(), ctx);
     }
 
     ctx.AddError(TIssue(ctx.GetPosition(input->Pos()), TStringBuilder() << "(Kikimr DataSink) Unsupported function: "

@@ -36,6 +36,7 @@ namespace NKikimr {
 namespace NViewer {
 
 using namespace NNodeWhiteboard;
+using TNavigate = NSchemeCache::TSchemeCacheNavigate;
 
 void SetupPQVirtualHandlers(IViewer* viewer) {
     viewer->RegisterVirtualHandler(
@@ -152,9 +153,11 @@ public:
 
     TString GetCORS(const NMon::TEvHttpInfo* request) override;
     TString GetHTTPOKJSON(const NMon::TEvHttpInfo* request, TString response) override;
+    TString GetHTTPOKTEXT(const NMon::TEvHttpInfo* request, TString response) override;
     TString GetHTTPOK(const NMon::TEvHttpInfo* request, TString type, TString response) override;
     TString GetHTTPGATEWAYTIMEOUT(const NMon::TEvHttpInfo* request) override;
     TString GetHTTPBADREQUEST(const NMon::TEvHttpInfo* request, TString type, TString response) override;
+    TString GetHTTPFORBIDDEN(const NMon::TEvHttpInfo* request) override;
 
     void RegisterVirtualHandler(
             NKikimrViewer::EObjectType parentObjectType,
@@ -467,6 +470,22 @@ TString TViewer::GetHTTPOKJSON(const NMon::TEvHttpInfo* request, TString respons
     return res;
 }
 
+TString TViewer::GetHTTPOKTEXT(const NMon::TEvHttpInfo* request, TString response) {
+    TStringBuilder res;
+    res << "HTTP/1.1 200 Ok\r\n"
+        << "Content-Type: text/plain; charset=utf-8\r\n"
+        << "X-Worker-Name: " << CurrentWorkerName << "\r\n";
+    res << GetCORS(request);
+    if (response) {
+        res << "Content-Length: " << response.size() << "\r\n";
+    }
+    res << "\r\n";
+    if (response) {
+        res << response;
+    }
+    return res;
+}
+
 TString TViewer::GetHTTPGATEWAYTIMEOUT(const NMon::TEvHttpInfo* request) {
     TStringBuilder res;
     res << "HTTP/1.1 504 Gateway Time-out\r\n"
@@ -489,6 +508,16 @@ TString TViewer::GetHTTPBADREQUEST(const NMon::TEvHttpInfo* request, TString con
     if (response) {
         res << response;
     }
+    return res;
+}
+
+TString TViewer::GetHTTPFORBIDDEN(const NMon::TEvHttpInfo* request) {
+    TStringBuilder res;
+    res << "HTTP/1.1 403 Forbidden\r\n"
+        << "Content-Type: application/json; charset=utf-8\r\n"
+        << "Connection: Close\r\n";
+    res << GetCORS(request);
+    res << "\r\n";
     return res;
 }
 
@@ -791,7 +820,6 @@ NKikimrViewer::EFlag GetViewerFlag(NKikimrWhiteboard::EFlag flag) {
     }
     return static_cast<NKikimrViewer::EFlag>((int)flag);
 }
-
 
 } // NNodeTabletMonitor
 } // NKikimr

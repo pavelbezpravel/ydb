@@ -1,6 +1,7 @@
 #include "executor_pool_shared.h"
 
 #include "actorsystem.h"
+#include "config.h"
 #include "executor_pool_basic.h"
 #include "executor_thread.h"
 #include "executor_thread_ctx.h"
@@ -12,23 +13,19 @@
 namespace NActors {
 
 TSharedExecutorPool::TSharedExecutorPool(const TSharedExecutorPoolConfig &config, i16 poolCount, std::vector<i16> poolsWithThreads)
-    : ThreadByPool(poolCount, -1)
-    , PoolByThread(poolsWithThreads.size())
-    , BorrowedThreadByPool(poolCount, -1)
-    , PoolByBorrowedThread(poolsWithThreads.size(), -1)
+    : State(poolCount, poolsWithThreads.size())
     , Pools(poolCount)
     , PoolCount(poolCount)
     , SharedThreadCount(poolsWithThreads.size())
     , Threads(new TSharedExecutorThreadCtx[SharedThreadCount])
-    , Timers(new TTimers[SharedThreadCount])
     , TimePerMailbox(config.TimePerMailbox)
     , EventsPerMailbox(config.EventsPerMailbox)
     , SoftProcessingDurationTs(config.SoftProcessingDurationTs)
 {
     for (ui32 poolIdx = 0, threadIdx = 0; poolIdx < poolsWithThreads.size(); ++poolIdx, ++threadIdx) {
         Y_ABORT_UNLESS(poolsWithThreads[poolIdx] < poolCount);
-        ThreadByPool[poolsWithThreads[poolIdx]] = threadIdx;
-        PoolByThread[threadIdx] = poolsWithThreads[poolIdx];
+        State.ThreadByPool[poolsWithThreads[poolIdx]] = threadIdx;
+        State.PoolByThread[threadIdx] = poolsWithThreads[poolIdx];
     }
 }
 
@@ -42,7 +39,7 @@ void TSharedExecutorPool::Prepare(TActorSystem* actorSystem, NSchedulerQueue::TR
         std::vector<IExecutorPool*> poolByThread(SharedThreadCount);
         for (IExecutorPool* pool : poolsBasic) {
             Pools[pool->PoolId] = dynamic_cast<TBasicExecutorPool*>(pool);
-            i16 threadIdx = ThreadByPool[pool->PoolId];
+            i16 threadIdx = State.ThreadByPool[pool->PoolId];
             if (threadIdx >= 0) {
                 poolByThread[threadIdx] = pool;
             }
@@ -95,29 +92,52 @@ bool TSharedExecutorPool::Cleanup() {
 }
 
 TSharedExecutorThreadCtx* TSharedExecutorPool::GetSharedThread(i16 pool) {
-    i16 threadIdx = ThreadByPool[pool];
+    i16 threadIdx = State.ThreadByPool[pool];
     if (threadIdx < 0 || threadIdx >= PoolCount) {
         return nullptr;
     }
     return &Threads[threadIdx];
 }
 
-void TSharedExecutorPool::ReturnHalfThread(i16 pool) {
-    i16 threadIdx = ThreadByPool[pool];
+void TSharedExecutorPool::ReturnOwnHalfThread(i16 pool) {
+    i16 threadIdx = State.ThreadByPool[pool];
     TBasicExecutorPool* borrowingPool = Threads[threadIdx].ExecutorPools[1].exchange(nullptr, std::memory_order_acq_rel);
     Y_ABORT_UNLESS(borrowingPool);
-    BorrowedThreadByPool[PoolByBorrowedThread[threadIdx]] = -1;
-    PoolByBorrowedThread[threadIdx] = -1;
+    State.BorrowedThreadByPool[State.PoolByBorrowedThread[threadIdx]] = -1;
+    State.PoolByBorrowedThread[threadIdx] = -1;
+    // TODO(kruall): Check on race
+    borrowingPool->ReleaseSharedThread();
+}
+
+void TSharedExecutorPool::ReturnBorrowedHalfThread(i16 pool) {
+    i16 threadIdx = State.BorrowedThreadByPool[pool];
+    TBasicExecutorPool* borrowingPool = Threads[threadIdx].ExecutorPools[1].exchange(nullptr, std::memory_order_acq_rel);
+    Y_ABORT_UNLESS(borrowingPool);
+    State.BorrowedThreadByPool[State.PoolByBorrowedThread[threadIdx]] = -1;
+    State.PoolByBorrowedThread[threadIdx] = -1;
     // TODO(kruall): Check on race
     borrowingPool->ReleaseSharedThread();
 }
 
 void TSharedExecutorPool::GiveHalfThread(i16 from, i16 to) {
-    i16 threadIdx = ThreadByPool[from];
+    if (from == to) {
+        return;
+    }
+    i16 borrowedThreadIdx = State.BorrowedThreadByPool[from];
+    if (borrowedThreadIdx != -1) {
+        i16 originalPool = State.PoolByThread[borrowedThreadIdx];
+        if (originalPool == to) {
+            return ReturnOwnHalfThread(to);
+        } else {
+            ReturnOwnHalfThread(originalPool);
+        }
+        from = originalPool;
+    }
+    i16 threadIdx = State.ThreadByPool[from];
     TBasicExecutorPool* borrowingPool = Pools[to];
     Threads[threadIdx].ExecutorPools[1].store(borrowingPool, std::memory_order_release);
-    BorrowedThreadByPool[to] = threadIdx;
-    PoolByBorrowedThread[threadIdx] = to;
+    State.BorrowedThreadByPool[to] = threadIdx;
+    State.PoolByBorrowedThread[threadIdx] = to;
     // TODO(kruall): Check on race
     borrowingPool->AddSharedThread(&Threads[threadIdx]);
 }
@@ -148,6 +168,10 @@ std::vector<TCpuConsumption> TSharedExecutorPool::GetThreadsCpuConsumption(i16 p
 
 i16 TSharedExecutorPool::GetSharedThreadCount() const {
     return SharedThreadCount;
+}
+
+TSharedPoolState TSharedExecutorPool::GetState() const {
+    return State;
 }
 
 }

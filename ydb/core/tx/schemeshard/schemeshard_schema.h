@@ -5,6 +5,8 @@
 #include <ydb/core/scheme/scheme_pathid.h>
 #include <ydb/core/protos/tx_datashard.pb.h>
 #include <ydb/core/protos/tx.pb.h>
+#include <ydb/public/api/protos/ydb_status_codes.pb.h>
+#include <ydb/library/login/protos/login.pb.h>
 #include <ydb/core/tablet_flat/flat_cxx_database.h>
 
 namespace NKikimr::NSchemeShard {
@@ -366,6 +368,9 @@ struct Schema : NIceDb::Schema {
 
         // PartCount, PartOwners & ShardState are volatile data
 
+        // Represented by NKikimrTableStats::TStoragePoolsStats.
+        struct StoragePoolsStats : Column<33, NScheme::NTypeIds::String> { using Type = TString; };
+
         using TKey = TableKey<TableOwnerId, TableLocalId, PartitionId>;
         using TColumns = TableColumns<
             TableOwnerId,
@@ -399,7 +404,8 @@ struct Schema : NIceDb::Schema {
             WriteIops,
             SearchHeight,
             FullCompactionTs,
-            MemDataSize
+            MemDataSize,
+            StoragePoolsStats
         >;
     };
 

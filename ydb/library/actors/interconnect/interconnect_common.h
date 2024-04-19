@@ -51,6 +51,9 @@ namespace NActors {
         bool EnableExternalDataChannel = false;
         bool ValidateIncomingPeerViaDirectLookup = false;
         ui32 SocketBacklogSize = 0; // SOMAXCONN if zero
+        TDuration FirstErrorSleep = TDuration::MilliSeconds(10);
+        TDuration MaxErrorSleep = TDuration::Seconds(1);
+        double ErrorSleepRetryMultiplier = 4.0;
 
         ui32 GetSendBufferSize() const {
             ui32 res = 512 * 1024; // 512 kb is the default value for send buffer
@@ -71,8 +74,10 @@ namespace NActors {
         bool Orange;
         bool Red;
         i64 ClockSkew;
+        bool ReportClockSkew;
 
-        TWhiteboardSessionStatus(TActorSystem* actorSystem, ui32 peerId, const TString& peer, bool connected, bool green, bool yellow, bool orange, bool red, i64 clockSkew)
+        TWhiteboardSessionStatus(TActorSystem* actorSystem, ui32 peerId, const TString& peer, bool connected,
+                                        bool green, bool yellow, bool orange, bool red, i64 clockSkew, bool reportClockSkew)
             : ActorSystem(actorSystem)
             , PeerId(peerId)
             , Peer(peer)
@@ -82,6 +87,7 @@ namespace NActors {
             , Orange(orange)
             , Red(red)
             , ClockSkew(clockSkew)
+            , ReportClockSkew(reportClockSkew)
             {}
     };
 

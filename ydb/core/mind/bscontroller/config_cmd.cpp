@@ -204,7 +204,7 @@ namespace NKikimr::NBsController {
                                 expectedSlotSize.push_back(size);
                             }
                         }
-                        const auto availabilityDomainId = AppData()->DomainsInfo->GetDomainUidByTabletId(Self->TabletID());
+                        const auto availabilityDomainId = AppData()->DomainsInfo->GetDomain()->DomainUid;
                         Self->FitGroupsForUserConfig(*State, availabilityDomainId, Cmd, std::move(expectedSlotSize), status);
 
                         const TDuration passed = TDuration::Seconds(timer.Passed());
@@ -347,6 +347,7 @@ namespace NKikimr::NBsController {
                     HANDLE_COMMAND(SanitizeGroup)
                     HANDLE_COMMAND(CancelVirtualGroup)
                     HANDLE_COMMAND(SetVDiskReadOnly)
+                    HANDLE_COMMAND(RestartPDisk)
 
                     case NKikimrBlobStorage::TConfigRequest::TCommand::kAddMigrationPlan:
                     case NKikimrBlobStorage::TConfigRequest::TCommand::kDeleteMigrationPlan:

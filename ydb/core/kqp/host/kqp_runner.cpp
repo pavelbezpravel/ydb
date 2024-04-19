@@ -110,7 +110,7 @@ public:
         IGraphTransformer& transformer,
         TExprContext& ctx,
         TKqlTransformContext& transformCtx)
-        : TKqpAsyncResultBase(queryRoot, ctx, transformer)
+        : TKqpAsyncResultBase(queryRoot, ctx, transformer, nullptr)
         , TransformCtx(transformCtx)
     {
     }
@@ -271,9 +271,9 @@ private:
             .AddCommonOptimization()
             .Add(CreateKqpConstantFoldingTransformer(OptimizeCtx, *typesCtx, Config), "ConstantFolding")
             .Add(CreateKqpStatisticsTransformer(OptimizeCtx, *typesCtx, Config, Pctx), "Statistics")
-            .Add(CreateKqpLogOptTransformer(OptimizeCtx, *typesCtx, Config, Pctx), "LogicalOptimize")
+            .Add(CreateKqpLogOptTransformer(OptimizeCtx, *typesCtx, Config), "LogicalOptimize")
             .Add(CreateLogicalDataProposalsInspector(*typesCtx), "ProvidersLogicalOptimize")
-            .Add(CreateKqpPhyOptTransformer(OptimizeCtx, *typesCtx), "KqpPhysicalOptimize")
+            .Add(CreateKqpPhyOptTransformer(OptimizeCtx, *typesCtx, Config), "KqpPhysicalOptimize")
             .Add(CreatePhysicalDataProposalsInspector(*typesCtx), "ProvidersPhysicalOptimize")
             .Add(CreateKqpFinalizingOptTransformer(OptimizeCtx), "FinalizingOptimize")
             .Add(CreateKqpQueryPhasesTransformer(), "QueryPhases")

@@ -925,6 +925,10 @@ private:
             NewLine();
             Visit(msg.GetBlock14());
         }
+        if (msg.HasBlock15()) {
+            NewLine();
+            Visit(msg.GetBlock15());
+        }
     }
 
     void VisitDropTable(const TRule_drop_table_stmt& msg) {
@@ -1477,6 +1481,12 @@ private:
         PosFromToken(msg.GetToken1());
         NewLine();
         VisitAllFields(TRule_create_replication_stmt::GetDescriptor(), msg);
+    }
+
+    void VisitAlterAsyncReplication(const TRule_alter_replication_stmt& msg) {
+        PosFromToken(msg.GetToken1());
+        NewLine();
+        VisitAllFields(TRule_alter_replication_stmt::GetDescriptor(), msg);
     }
 
     void VisitDropAsyncReplication(const TRule_drop_replication_stmt& msg) {
@@ -2689,6 +2699,7 @@ TStaticData::TStaticData()
         {TRule_alter_external_data_source_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitAlterExternalDataSource)},
         {TRule_drop_external_data_source_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitDropExternalDataSource)},
         {TRule_create_replication_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitCreateAsyncReplication)},
+        {TRule_alter_replication_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitAlterAsyncReplication)},
         {TRule_drop_replication_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitDropAsyncReplication)},
         {TRule_create_topic_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitCreateTopic)},
         {TRule_alter_topic_stmt::GetDescriptor(), MakePrettyFunctor(&TPrettyVisitor::VisitAlterTopic)},

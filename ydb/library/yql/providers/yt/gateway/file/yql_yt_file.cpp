@@ -504,7 +504,7 @@ public:
                     const auto& value = compGraph->GetValue();
                     const auto it = value.GetListIterator();
                     for (NUdf::TUnboxedValue current; it.Next(current);) {
-                        res.Tables.push_back(TCanonizedPath{TString(current.AsStringRef()), Nothing(), {}});
+                        res.Tables.push_back(TCanonizedPath{TString(current.AsStringRef()), Nothing(), {}, Nothing()});
                     }
                 }
                 else {
@@ -512,7 +512,7 @@ public:
                         uniqueTables.begin(), uniqueTables.end(),
                         std::back_inserter(res.Tables),
                         [] (const TString& path) {
-                            return TCanonizedPath{path, Nothing(), {}};
+                            return TCanonizedPath{path, Nothing(), {}, Nothing()};
                         });
                 }
             }
@@ -747,7 +747,7 @@ public:
                 Services_->GetFunctionRegistry()->SupportsSizedAllocators());
             TMemoryUsageInfo memInfo("Stat");
             TTypeEnvironment env(alloc);
-            TProgramBuilder pgmBuilder(env, *Services_->GetFunctionRegistry());
+            NKikimr::NMiniKQL::TTypeBuilder typeBuilder(env);
             THolderFactory holderFactory(alloc.Ref(), memInfo, Services_->GetFunctionRegistry());
 
             NCommon::TCodecContext codecCtx(env, *Services_->GetFunctionRegistry(), &holderFactory);
@@ -759,7 +759,7 @@ public:
             writer.SetSpecs(spec);
 
             TStringStream err;
-            auto type = BuildType(*tableInfo.RowSpec->GetType(), pgmBuilder, err);
+            auto type = BuildType(*tableInfo.RowSpec->GetType(), typeBuilder, err);
             TValuePacker packer(true, type);
             for (auto& c: content) {
                 auto val = packer.Unpack(c, holderFactory);
@@ -1079,6 +1079,9 @@ public:
         res.Partitions.Partitions.back().TableRanges = std::move(paths);
         res.SetSuccess();
         return res;
+    }
+
+    void AddCluster(const TYtClusterConfig&) override {
     }
 
 private:

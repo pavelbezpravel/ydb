@@ -1,6 +1,6 @@
 RECURSE(
-    grpc
-    protos
     client
     etcd
+    grpc
+    protos
 )

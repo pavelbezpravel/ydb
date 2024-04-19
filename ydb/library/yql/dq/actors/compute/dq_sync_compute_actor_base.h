@@ -3,43 +3,22 @@
 
 namespace NYql::NDq {
 
-struct TComputeActorAsyncInputHelperForTaskRunner : public TComputeActorAsyncInputHelper
-{
-public:
-    using TComputeActorAsyncInputHelper::TComputeActorAsyncInputHelper;
-
-    void AsyncInputPush(NKikimr::NMiniKQL::TUnboxedValueBatch&& batch, i64 space, bool finished) override {
-        Buffer->Push(std::move(batch), space);
-        if (finished) {
-            Buffer->Finish();
-            Finished = true;
-        }
-    }
-    i64 GetFreeSpace() const override{
-        return Buffer->GetFreeSpace();
-    }
-
-    IDqAsyncInputBuffer::TPtr Buffer;
-};
-
 template<typename TDerived>
-class TDqSyncComputeActorBase: public TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperForTaskRunner> {
-    using TBase = TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperForTaskRunner>;
+class TDqSyncComputeActorBase: public TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperSync> {
+    using TBase = TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperSync>;
 public:
-    using TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperForTaskRunner>::TDqComputeActorBase;
+    using TDqComputeActorBase<TDerived, TComputeActorAsyncInputHelperSync>::TDqComputeActorBase;
     static constexpr bool HasAsyncTaskRunner = false;
 
-    template<typename T>
-    requires(std::is_base_of<TComputeActorAsyncInputHelperForTaskRunner, T>::value)
-    T CreateInputHelper(const TString& logPrefix,
+    TComputeActorAsyncInputHelperSync CreateInputHelper(const TString& logPrefix,
         ui64 index,
         NDqProto::EWatermarksMode watermarksMode
     )
     {
-        return T(logPrefix, index, watermarksMode);
+        return TComputeActorAsyncInputHelperSync(logPrefix, index, watermarksMode);
     }
 
-    const IDqAsyncInputBuffer* GetInputTransform(ui64, const TComputeActorAsyncInputHelperForTaskRunner& inputTransformInfo) const
+    const IDqAsyncInputBuffer* GetInputTransform(ui64, const TComputeActorAsyncInputHelperSync& inputTransformInfo) const
     {
         return inputTransformInfo.Buffer.Get();
     }
@@ -223,7 +202,11 @@ protected:
 
         TDqTaskRunnerMemoryLimits limits;
         limits.ChannelBufferSize = this->MemoryLimits.ChannelBufferSize;
-        limits.OutputChunkMaxSize = GetDqExecutionSettings().FlowControl.MaxOutputChunkSize;
+        limits.OutputChunkMaxSize = this->MemoryLimits.OutputChunkMaxSize;
+
+        if (!limits.OutputChunkMaxSize) {
+            limits.OutputChunkMaxSize = GetDqExecutionSettings().FlowControl.MaxOutputChunkSize;
+	}
 
         TaskRunner->Prepare(this->Task, limits, execCtx);
 
@@ -237,7 +220,7 @@ protected:
         }
 
         for (auto& [inputIndex, transform] : this->InputTransformsMap) {
-            std::tie(transform.InputBuffer, transform.Buffer) = TaskRunner->GetInputTransform(inputIndex);
+            std::tie(transform.Input, transform.Buffer) = *TaskRunner->GetInputTransform(inputIndex);
         }
 
         for (auto& [channelId, channel] : this->OutputChannelsMap) {
@@ -270,7 +253,7 @@ protected:
         return TaskRunner ? TaskRunner->GetMeteringStats() : nullptr;
     }
 
-    const IDqAsyncOutputBuffer* GetSink(ui64, const TBase::TAsyncOutputInfoBase& sinkInfo) const override final {
+    const IDqAsyncOutputBuffer* GetSink(ui64, const typename TBase::TAsyncOutputInfoBase& sinkInfo) const override final {
         return sinkInfo.Buffer.Get();
     }
 
@@ -287,7 +270,7 @@ protected:
         return this->MemoryQuota->GetProfileStats();
     }
 
-    virtual void DrainOutputChannel(TBase::TOutputChannelInfo& outputChannel) final {
+    virtual void DrainOutputChannel(typename TBase::TOutputChannelInfo& outputChannel) final {
         YQL_ENSURE(!outputChannel.Finished || this->Checkpoints);
 
         const bool wasFinished = outputChannel.Finished;
@@ -336,7 +319,7 @@ protected:
         this->ProcessOutputsState.AllOutputsFinished &= outputChannel.Finished;
         this->ProcessOutputsState.DataWasSent |= (!wasFinished && outputChannel.Finished) || sentChunks;
     }
-    void DrainAsyncOutput(ui64 outputIndex, TBase::TAsyncOutputInfoBase& outputInfo) override final {
+    void DrainAsyncOutput(ui64 outputIndex, typename TBase::TAsyncOutputInfoBase& outputInfo) override final {
         this->ProcessOutputsState.AllOutputsFinished &= outputInfo.Finished;
         if (outputInfo.Finished && !this->Checkpoints) {
             return;
