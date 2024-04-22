@@ -57,7 +57,7 @@ private:
     void CreateTable() {
         Register(
             NKikimr::CreateTableCreator(
-                {Path, "revision"},
+                {".etcd", "revision"},
                 {
                     Col("id", NKikimr::NScheme::NTypeIds::Bool),
                     Col("revision", NKikimr::NScheme::NTypeIds::Int64),

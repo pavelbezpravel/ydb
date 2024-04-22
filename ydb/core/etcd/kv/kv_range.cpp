@@ -26,7 +26,7 @@ public:
     void OnRunQuery() override {
         TStringBuilder query;
         query << Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $revision AS Int64;
             DECLARE $key AS String;
@@ -39,8 +39,7 @@ public:
 
             SELECT kv.*, COUNT(*) OVER() AS count
                 FROM kv
-                WHERE key BETWEEN $key AND $range_end)",
-            Path.c_str()
+                WHERE key BETWEEN $key AND $range_end)"
         );
 
         if (Request.revision > 0) {

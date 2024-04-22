@@ -27,7 +27,7 @@ public:
     void OnRunQuery() override {
         TStringBuilder query;
         query << Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $revision AS Int64;
             DECLARE $new_kv AS List<Struct<
@@ -64,7 +64,6 @@ public:
                         %s AS value,
                     FROM $next_kv;
         )",
-        Path.c_str(),
         Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key " || key || " is absent"))" : "new_value"
         );
 

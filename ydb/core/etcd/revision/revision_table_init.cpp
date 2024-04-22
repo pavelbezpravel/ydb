@@ -33,7 +33,7 @@ public:
             PRAGMA TablePathPrefix("/Root/.etcd");
 
             $initial = AsList(
-                AsStruct(FALSE AS id, 0 AS revision),
+                AsStruct(FALSE AS id, Int64("0") AS revision),
             );
             UPSERT
                 INTO revision
@@ -54,7 +54,7 @@ public:
         NYdb::TResultSetParser parser(ResultSets[0]);
         parser.TryNextRow();
 
-        Revision = parser.ColumnParser("revision").GetInt64();
+        Revision = *parser.ColumnParser("revision").GetOptionalInt64();
 
         Finish();
     }

@@ -278,7 +278,7 @@ private:
         TEvEtcdKV::TEvTxnRequest::TPtr,
         TEvEtcdKV::TEvCompactionRequest::TPtr>;
 
-    const TString Path = ".etcd";
+    const TString Path = "/Root/.etcd";
     TMap<uint64_t, TRequests> Requests{};
     uint64_t Cookie = 0;
     bool InProgress = false;
