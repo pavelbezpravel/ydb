@@ -25,6 +25,8 @@ public:
     }
 
     void OnRunQuery() override {
+        auto compareCond = Compare(Request.key, Request.range_end);
+
         TStringBuilder query;
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
@@ -40,12 +42,13 @@ public:
 
             SELECT kv.*, COUNT(*) OVER() AS count
                 FROM kv
-                WHERE key BETWEEN $key AND $range_end
+                WHERE %s
                     AND create_revision <= $revision AND (delete_revision IS NULL OR $revision <= delete_revision)
                     AND $min_create_revision <= create_revision
                     AND create_revision <= $max_create_revision
                     AND $min_mod_revision <= mod_revision
-                    AND mod_revision <= $max_mod_revision)"
+                    AND mod_revision <= $max_mod_revision)",
+            compareCond.c_str()
         );
 
         if (Request.sort_order != TRangeRequest::ESortOrder::NONE) {
@@ -123,17 +126,17 @@ public:
 
         NYdb::TResultSetParser parser(ResultSets[0]);
 
-        Response.Count = std::min(parser.RowsCount(), Request.limit);
+        Response.Count = Request.limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.limit);
 
-        Response.More = parser.RowsCount() > Request.limit;
+        Response.More = parser.RowsCount() > Response.Count;
 
         Response.KVs.reserve(Response.Count);
         while (Response.KVs.size() < Response.Count) {
             parser.TryNextRow();
 
             TKeyValue kv{
-                .key = std::move(parser.ColumnParser("key").GetString()),
-                .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),
+                .key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                .mod_revision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
                 .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
                 .version = *parser.ColumnParser("version").GetOptionalInt64(),
                 .value = std::move(*parser.ColumnParser("value").GetOptionalString()),

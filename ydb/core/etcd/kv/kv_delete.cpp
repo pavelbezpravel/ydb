@@ -24,6 +24,8 @@ public:
     }
 
     void OnRunQuery() override {
+        auto compareCond = Compare(Request.Key, Request.RangeEnd);
+
         TStringBuilder query;
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
@@ -35,13 +37,14 @@ public:
             $prev_kv = (
                 SELECT *
                     FROM kv
-                    WHERE key BETWEEN $key AND $range_end
+                    WHERE %s
                         AND delete_revision IS NULL
             );
             UPSERT
                 INTO kv (key, mod_revision, delete_revision)
                 SELECT key, mod_revision, $revision
-                    FROM $prev_kv;)"
+                    FROM $prev_kv;)",
+            compareCond.c_str()
         );
 
         if (Request.PrevKV) {
@@ -78,8 +81,8 @@ public:
             Response.PrevKVs.reserve(Response.Deleted);
             while (parser.TryNextRow()) {
                 TKeyValue kv{
-                    .key = std::move(parser.ColumnParser("key").GetString()),
-                    .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),
+                    .key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                    .mod_revision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
                     .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
                     .version = *parser.ColumnParser("version").GetOptionalInt64(),
                     .value = std::move(*parser.ColumnParser("value").GetOptionalString()),

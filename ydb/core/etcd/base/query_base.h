@@ -49,6 +49,18 @@ public:
         return TString{kEmptyKey};
     }
 
+    [[nodiscard]] static inline TString Compare(const TString& key, const TString& rangeEnd) noexcept {
+        if (rangeEnd.empty()) {
+            return "key == $key";
+        } else if (rangeEnd == kEmptyKey) {
+            return "key >= $key";
+        } else if (rangeEnd == GetPrefix(key)) {
+            return "StartsWith(key, $key)";
+        } else {
+            return "key BETWEEN $key AND $range_end";
+        }
+    }
+
 protected:
     static constexpr TStringBuf kEmptyKey{"\0", 1};
     static_assert(kEmptyKey.size() == 1);
