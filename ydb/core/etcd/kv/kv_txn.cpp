@@ -20,7 +20,7 @@ namespace {
 class TKVTxnActor : public TQueryBase {
 public:
     TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TTxnRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , RequestIndex(-1)
@@ -29,7 +29,7 @@ public:
 
     void OnRunQuery() override {
         auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $target AS List<Struct<
                 key: String,
@@ -61,7 +61,7 @@ public:
                     END, false)) AS result,
                 FROM AS_TABLE($target) AS target_table
                 LEFT JOIN kv           AS source_table USING(key);
-        )", Path.c_str());
+        )");
 
         NYdb::TParamsBuilder params;
 

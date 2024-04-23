@@ -18,7 +18,7 @@ namespace {
 class TKVDeleteActor : public TQueryBase {
 public:
     TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , Request(request) {
@@ -27,7 +27,7 @@ public:
     void OnRunQuery() override {
         TStringBuilder query;
         query << Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $revision AS Int64;
             DECLARE $key AS String;
@@ -42,8 +42,7 @@ public:
             UPSERT
                 INTO kv (key, mod_revision, delete_revision)
                 SELECT key, mod_revision, $revision
-                    FROM $prev_kv;)",
-            Path.c_str()
+                    FROM $prev_kv;)"
         );
 
         if (Request.PrevKV) {

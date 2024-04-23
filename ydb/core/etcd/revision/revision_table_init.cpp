@@ -23,7 +23,7 @@ namespace {
 class TRevisionTableInitActor : public TQueryBase {
 public:
     TRevisionTableInitActor(ui64 logComponent, TString&& sessionId, TString path, uint64_t cookie)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), TTxControl::BeginAndCommitTx())
+        : TQueryBase(logComponent, std::move(sessionId), path, path, TTxControl::BeginAndCommitTx())
         , Cookie(cookie) {
     }
 
@@ -54,13 +54,13 @@ public:
         NYdb::TResultSetParser parser(ResultSets[0]);
         parser.TryNextRow();
 
-        Revision = *parser.ColumnParser("revision").GetOptionalInt64();
+        Revision = parser.ColumnParser("revision").GetInt64();
 
         Finish();
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), TxId, Revision), {}, Cookie);
+        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision), {}, Cookie);
     }
 
 private:

@@ -6,7 +6,7 @@ namespace NYdb::NEtcd {
 
 class TQueryBase : public NKikimr::TQueryBase {
 public:
-    TQueryBase(ui64 logComponent, TString&& sessionId, TString&& database, TString&& path, TTxControl txControl, TString&& txId = {})
+    TQueryBase(ui64 logComponent, TString&& sessionId, TString database, TString path, TTxControl txControl, TString&& txId = {})
         : NKikimr::TQueryBase(logComponent, sessionId, database)
         , Path(path)
         , TxControl(txControl) {

@@ -28,9 +28,10 @@ struct TEvEtcdRevision {
     struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {};
 
     struct TEvRevisionResponse : public NActors::TEventLocal<TEvRevisionResponse, EvRevisionResponse> {
-        TEvRevisionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString txId, i64 revision)
+        TEvRevisionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString sessionId, TString txId, i64 revision)
             : Status(status)
             , Issues(issues)
+            , SessionId(std::move(sessionId))
             , TxId(std::move(txId))
             , Revision(revision)
         {
@@ -38,6 +39,7 @@ struct TEvEtcdRevision {
 
         Ydb::StatusIds::StatusCode Status;
         NYql::TIssues Issues;
+        TString SessionId;
         TString TxId;
         i64 Revision;
     };

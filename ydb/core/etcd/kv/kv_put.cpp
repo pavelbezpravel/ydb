@@ -18,7 +18,7 @@ namespace {
 class TKVPutActor : public TQueryBase {
 public:
     TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TPutRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
         , Revision(revision)
         , Cookie(cookie)
         , Request(request) {

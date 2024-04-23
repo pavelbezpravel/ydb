@@ -18,13 +18,13 @@ namespace {
 class TRevisionIncActor : public TQueryBase {
 public:
     TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, uint64_t cookie)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl, std::move(txId))
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
         , Cookie(cookie) {
     }
 
     void OnRunQuery() override {
         auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
             $revision = (
                 SELECT *
@@ -38,7 +38,7 @@ public:
                         revision + 1 AS revision,
                     FROM $revision;
             SELECT revision FROM $revision;
-        )", Path.c_str());
+        )");
 
         RunDataQuery(query, nullptr, TxControl);
     }
@@ -53,12 +53,13 @@ public:
         parser.TryNextRow();
 
         Revision = *parser.ColumnParser("revision").GetOptionalInt64();
+        DeleteSession = TxControl.Commit;
 
         Finish();
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), TxId, Revision), {}, Cookie);
+        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision), {}, Cookie);
     }
 
 private:

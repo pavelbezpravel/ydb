@@ -18,7 +18,7 @@ namespace {
 class TKVRangeActor : public TQueryBase {
 public:
     TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, uint64_t cookie, TRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "kv"}), std::move(path), txControl, std::move(txId))
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
         , Cookie(cookie)
         , Request(request) {
     }

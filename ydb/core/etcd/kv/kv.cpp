@@ -89,6 +89,7 @@ protected:
             return;
         }
 
+        SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
         Revision = ev->Get()->Revision;
 
