@@ -19,10 +19,8 @@ namespace {
 
 class TKVTxnActor : public TQueryBase {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TTxnRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
-        , Revision(revision)
-        , Cookie(cookie)
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , RequestIndex(-1)
         , Request(request) {
     }
@@ -126,17 +124,11 @@ public:
     }
 
     void OnCompareQueryResult() {
-        if (ResultSets.size() != 1) {
-            Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-            return;
-        }
+        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
         NYdb::TResultSetParser parser(ResultSets[0]);
 
-        if (parser.RowsCount() != 1) {
-            Finish(Ydb::StatusIds::INTERNAL_ERROR, "Expected 1 row in database response");
-            return;
-        }
+        Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
 
         parser.TryNextRow();
 
@@ -153,7 +145,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 
 private:
@@ -216,29 +208,24 @@ private:
                 return currTxControl;
             }
         }();
-        std::visit([&](auto&& arg) {
+        std::visit([&](const auto& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, std::shared_ptr<TDeleteRangeRequest>>) {
                 Become(&TKVTxnActor::KVDeleteRangeStateFunc);
-                Register(CreateKVDeleteActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TPutRequest>>) {
                 Become(&TKVTxnActor::KVPutStateFunc);
-                Register(CreateKVPutActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TRangeRequest>>) {
                 Become(&TKVTxnActor::KVRangeStateFunc);
-                Register(CreateKVRangeActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, *arg));
             } else if constexpr (std::is_same_v<T, std::shared_ptr<TTxnRequest>>) {
                 Become(&TKVTxnActor::KVTxnStateFunc);
-                Register(CreateKVTxnActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, Cookie, *arg));
             } else {
                 static_assert(sizeof(T) == 0);
             }
+            Register(CreateKVQueryActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, Revision, *arg));
         }, Requests[RequestIndex]);
     }
 
 private:
-    i64 Revision;
-    uint64_t Cookie;
     size_t RequestIndex;
     TTxnRequest Request;
     TTxnResponse Response;
@@ -246,8 +233,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTxnActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TTxnRequest request) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

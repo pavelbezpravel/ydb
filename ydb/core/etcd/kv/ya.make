@@ -1,6 +1,7 @@
 LIBRARY()
 
 SRCS(
+    kv_compact.cpp
     kv_delete.cpp
     kv_put.cpp
     kv_range.cpp

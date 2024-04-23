@@ -16,7 +16,7 @@ namespace {
 
 class TRevisionTableCreateActor : public NActors::TActorBootstrapped<TRevisionTableCreateActor> {
 public:
-    TRevisionTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie)
+    TRevisionTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie)
         : LogComponent(logComponent)
         , SessionId(std::move(sessionId))
         , Path(std::move(path))
@@ -73,12 +73,12 @@ private:
     NActors::TActorId Owner;
 
     TString Path;
-    uint64_t Cookie;
+    ui64 Cookie;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionTableCreateActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
+NActors::IActor* CreateRevisionTableCreateActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie) {
     return new TRevisionTableCreateActor(logComponent, std::move(sessionId), std::move(path), cookie);
 }
 

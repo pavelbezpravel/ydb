@@ -1,4 +1,4 @@
-#include "revision_inc.h"
+#include "revision_get.h"
 
 #include "events.h"
 
@@ -15,28 +15,20 @@ namespace NYdb::NEtcd {
 
 namespace {
 
-class TRevisionIncActor : public TQueryBase {
+class TRevisionGetActor : public TQueryBase {
 public:
-    TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, {}) {
+    TRevisionGetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie)
+        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl, std::move(txId), cookie, {}) {
     }
 
     void OnRunQuery() override {
         auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("/Root/.etcd");
+            PRAGMA TablePathPrefix("%s");
 
-            $revision = (
-                SELECT *
-                    FROM revision
-                    LIMIT 1
-            );
-            UPSERT
-                INTO revision
-                SELECT
-                        id,
-                        revision + 1 AS revision,
-                    FROM $revision;
-            SELECT revision FROM $revision;)"
+            SELECT revision
+                FROM revision
+                LIMIT 1;)",
+            Path.c_str()
         );
 
         RunDataQuery(query, nullptr, TxControl);
@@ -46,7 +38,7 @@ public:
         Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
         NYdb::TResultSetParser parser(ResultSets[0]);
-
+        
         parser.TryNextRow();
 
         Revision = *parser.ColumnParser("revision").GetOptionalInt64();
@@ -63,8 +55,8 @@ public:
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionIncActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie) {
-    return new TRevisionIncActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie);
+NActors::IActor* CreateRevisionGetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie) {
+    return new TRevisionGetActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie);
 }
 
 } // namespace NYdb::NEtcd

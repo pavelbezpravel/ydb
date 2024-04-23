@@ -7,6 +7,6 @@ namespace NYdb::NEtcd {
 
 struct TDeleteRangeRequest;
 
-NActors::IActor* CreateKVDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TDeleteRangeRequest request);
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TDeleteRangeRequest request);
 
 } // namespace NYdb::NEtcd

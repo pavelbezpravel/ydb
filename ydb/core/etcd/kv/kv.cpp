@@ -3,6 +3,7 @@
 #include "events.h"
 #include "proto.h"
 
+#include "kv_compact.h"
 #include "kv_delete.h"
 #include "kv_put.h"
 #include "kv_range.h"
@@ -13,6 +14,7 @@
 #include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/core/etcd/revision/events.h>
+#include <ydb/core/etcd/revision/revision_get.h>
 #include <ydb/core/etcd/revision/revision_inc.h>
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
@@ -22,67 +24,48 @@ namespace NYdb::NEtcd {
 
 namespace {
 
-class TKVDeleteRangeActor;
-class TKVPutActor;
-class TKVRangeActor;
-class TKVTxnActor;
+template<typename TEvReq, typename TEvResp>
+class TKVActor : public NActors::TActorBootstrapped<TKVActor<TEvReq, TEvResp>> {
+    using TReq = decltype(std::declval<TEvReq>().Request);
+    using TResp = decltype(std::declval<TEvResp>().Response);
 
-template<typename TActor>
-struct TResponseTraits;
-
-template<>
-struct TResponseTraits<TKVDeleteRangeActor> {
-    using type = TEvEtcdKV::TEvDeleteRangeResponse;
-};
-
-template<>
-struct TResponseTraits<TKVPutActor> {
-    using type = TEvEtcdKV::TEvPutResponse;
-};
-
-template<>
-struct TResponseTraits<TKVRangeActor> {
-    using type = TEvEtcdKV::TEvRangeResponse;
-};
-
-template<>
-struct TResponseTraits<TKVTxnActor> {
-    using type = TEvEtcdKV::TEvTxnResponse;
-};
-
-template<typename TDerived>
-class TKVBaseActor : public NActors::TActorBootstrapped<TDerived> {
 public:
-    TKVBaseActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie)
+    TKVActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie, TReq&& request)
         : LogComponent(logComponent)
         , SessionId(sessionId)
         , Path(path)
         , TxControl(NKikimr::TQueryBase::TTxControl::BeginAndCommitTx())
-        , Cookie(cookie) {
+        , Cookie(cookie)
+        , Request(request) {
+    }
+
+    void Bootstrap() {
+        auto [currTxControl, nextTxControl] = TQueryBase::Split(TxControl);
+        TxControl = nextTxControl;
+
+        RegisterRevisionIncRequest(currTxControl);
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
-        NActors::TActorBootstrapped<TKVBaseActor<TDerived>>::Registered(sys, owner);
+        NActors::TActorBootstrapped<TKVActor<TEvReq, TEvResp>>::Registered(sys, owner);
         Owner = owner;
     }
 
 protected:
-    using TEvKVResponse = typename TResponseTraits<TDerived>::type;
+    void RegisterRevisionGetRequest(NKikimr::TQueryBase::TTxControl txControl) {
+        this->Become(&TKVActor<TEvReq, TEvResp>::RevisionStateFunc);
 
-    TDerived& GetDerived() {
-        return static_cast<TDerived&>(*this);
+        this->Register(CreateRevisionGetActor(LogComponent, SessionId, Path, txControl, TxId, Cookie));
     }
 
-    void RegisterRevisionIncRequest() {
-        auto [currTxControl, nextTxControl] = TQueryBase::Split(TxControl);
-        TxControl = nextTxControl;
+    void RegisterRevisionIncRequest(NKikimr::TQueryBase::TTxControl txControl) {
+        this->Become(&TKVActor<TEvReq, TEvResp>::RevisionStateFunc);
 
-        this->Become(&TKVBaseActor<TDerived>::RevisionStateFunc);
-
-        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie));
+        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, txControl, TxId, Cookie));
     }
 
     STRICT_STFUNC(RevisionStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle))
+
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
@@ -93,28 +76,40 @@ protected:
         TxId = std::move(ev->Get()->TxId);
         Revision = ev->Get()->Revision;
 
-        GetDerived().RegisterKVRequest();
+        RegisterKVRequest(TxControl);
     }
 
-    STRICT_STFUNC(KVStateFunc, hFunc(TEvKVResponse, Handle))
+    void RegisterKVRequest(NKikimr::TQueryBase::TTxControl txControl) {
+        this->Become(&TKVActor<TEvReq, TEvResp>::KVStateFunc);
 
-    void Handle(TEvKVResponse::TPtr& ev) {
+        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, Revision, std::move(Request)));
+    }
+
+    STRICT_STFUNC(KVStateFunc, hFunc(TEvResp, Handle))
+
+    void Handle(TEvResp::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-            Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            this->Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
         }
 
-        GetDerived().Response = std::move(ev->Get()->Response);
+        SessionId = std::move(ev->Get()->SessionId);
+        TxId = std::move(ev->Get()->TxId);
+        Response = std::move(ev->Get()->Response);
 
-        Finish();
+        // if (!Response.IsWrite()) {
+            this->Finish();
+        // }
+
+        // RegisterRevisionIncRequest(TxControl);
     }
 
     void Finish() {
-        Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
+        this->Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
     }
 
     void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {
-        this->Send(Owner, new TEvKVResponse(status, std::move(issues), TxId, std::move(GetDerived().Response)), {}, Cookie);
+        this->Send(Owner, new TEvResp(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
         this->PassAway();
     }
 
@@ -128,113 +123,31 @@ protected:
     NKikimr::TQueryBase::TTxControl TxControl;
 
     i64 Revision;
-    uint64_t Cookie;
-};
-
-class TKVDeleteRangeActor : public TKVBaseActor<TKVDeleteRangeActor> {
-public:
-    TKVDeleteRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TDeleteRangeRequest&& request)
-        : TKVBaseActor<TKVDeleteRangeActor>(logComponent, std::move(sessionId), std::move(path), cookie)
-        , Request(request) {
-    }
-
-    void Bootstrap() {
-        RegisterRevisionIncRequest();
-    }
-
-    void RegisterKVRequest() {
-        Become(&TKVDeleteRangeActor::KVStateFunc);
-
-        Register(CreateKVDeleteActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
-    }
-
-public:
-    TDeleteRangeRequest Request;
-    TDeleteRangeResponse Response;
-};
-
-class TKVPutActor : public TKVBaseActor<TKVPutActor> {
-public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TPutRequest&& request)
-        : TKVBaseActor<TKVPutActor>(logComponent, std::move(sessionId), std::move(path), cookie)
-        , Request(request) {
-    }
-
-    void Bootstrap() {
-        RegisterRevisionIncRequest();
-    }
-
-    void RegisterKVRequest() {
-        Become(&TKVPutActor::KVStateFunc);
-
-        Register(CreateKVPutActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
-    }
-
-public:
-    TPutRequest Request;
-    TPutResponse Response;
-};
-
-class TKVRangeActor : public TKVBaseActor<TKVRangeActor> {
-public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TRangeRequest&& request)
-        : TKVBaseActor<TKVRangeActor>(logComponent, std::move(sessionId), std::move(path), cookie)
-        , Request(request) {
-    }
-
-    void Bootstrap() {
-        RegisterKVRequest();
-    }
-
-    void RegisterKVRequest() {
-        Become(&TKVRangeActor::KVStateFunc);
-
-        Register(CreateKVRangeActor(LogComponent, SessionId, Path, TxControl, TxId, Cookie, std::move(Request)));
-    }
-
-public:
-    TRangeRequest Request;
-    TRangeResponse Response;
-};
-
-class TKVTxnActor : public TKVBaseActor<TKVTxnActor> {
-public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie, TTxnRequest&& request)
-        : TKVBaseActor<TKVTxnActor>(logComponent, std::move(sessionId), std::move(path), cookie)
-        , Request(request) {
-    }
-
-    void Bootstrap() {
-        RegisterRevisionIncRequest();
-    }
-
-    void RegisterKVRequest() {
-        Become(&TKVTxnActor::KVStateFunc);
-
-        Register(CreateKVTxnActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Cookie, std::move(Request)));
-    }
-
-public:
-    TTxnRequest Request;
-    TTxnResponse Response;
+    ui64 Cookie;
+    TReq Request;
+    TResp Response;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TDeleteRangeRequest request) {
-    return new TKVDeleteRangeActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TCompactionRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TDeleteRangeRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TRangeRequest request) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TPutRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TTxnRequest request) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TRangeRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+}
+
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

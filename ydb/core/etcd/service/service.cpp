@@ -104,7 +104,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -139,7 +139,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -174,7 +174,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -209,7 +209,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request_)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -244,8 +244,7 @@ private:
             }
             return;
         }
-        // TODO [pavelbezpravel]: add actor for compaction.
-        Send(ev->Sender, new TEvEtcdKV::TEvCompactionResponse({}, {}, {}, {}), {}, {});
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -279,8 +278,8 @@ private:
         TEvEtcdKV::TEvCompactionRequest::TPtr>;
 
     const TString Path = "/Root/.etcd";
-    TMap<uint64_t, TRequests> Requests{};
-    uint64_t Cookie = 0;
+    TMap<ui64, TRequests> Requests{};
+    ui64 Cookie = 0;
     bool InProgress = false;
     size_t TablesCreating = 2;
 };

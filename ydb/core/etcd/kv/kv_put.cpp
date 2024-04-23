@@ -17,10 +17,8 @@ namespace {
 
 class TKVPutActor : public TQueryBase {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TPutRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
-        , Revision(revision)
-        , Cookie(cookie)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TPutRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , Request(request) {
     }
 
@@ -59,7 +57,7 @@ public:
                         key,
                         $revision AS mod_revision,
                         COALESCE(create_revision, $revision) AS create_revision,
-                        COALESCE(version, -1) + 1 AS version,
+                        COALESCE(version, 0) + 1 AS version,
                         NULL AS delete_revision,
                         %s AS value,
                     FROM $next_kv;
@@ -69,8 +67,7 @@ public:
 
         if (Request.PrevKV) {
             query << R"(
-            SELECT * FROM $prev_kv;
-            )";
+            SELECT * FROM $next_kv;)";
         }
 
         NYdb::TParamsBuilder params;
@@ -98,47 +95,47 @@ public:
 
     void OnQueryResult() override {
         if (Request.PrevKV) {
-            if (ResultSets.size() != 1) {
-                Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-                return;
-            }
+            Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
             Response.PrevKVs.reserve(parser.RowsCount());
             while (parser.TryNextRow()) {
+                auto mod_revision = parser.ColumnParser("mod_revision").GetOptionalInt64();
+                if (!mod_revision) {
+                    continue;
+                }
                 TKeyValue kv {
-                    .key = parser.ColumnParser("key").GetString(),
-                    .create_revision = parser.ColumnParser("create_revision").GetInt64(),
-                    .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),
-                    .version = parser.ColumnParser("version").GetInt64(),
-                    .value = parser.ColumnParser("value").GetString(),
+                    .key = std::move(parser.ColumnParser("key").GetString()),
+                    .mod_revision = *mod_revision,
+                    .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                    .version = *parser.ColumnParser("version").GetOptionalInt64(),
+                    .value = std::move(*parser.ColumnParser("value").GetOptionalString()),
                 };
                 Response.PrevKVs.emplace_back(std::move(kv));
             }
-        } else if (ResultSets.size() != 0) {
-            Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-            return;
+        } else {
+            Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
         }
+
+        DeleteSession = TxControl.Commit;
 
         Finish();
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 
 private:
-    i64 Revision;
-    uint64_t Cookie;
     TPutRequest Request;
     TPutResponse Response;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVPutActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

@@ -16,7 +16,7 @@ namespace {
 
 class TKVTableCreateActor : public NActors::TActorBootstrapped<TKVTableCreateActor> {
 public:
-    TKVTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, uint64_t cookie)
+    TKVTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie)
         : LogComponent(logComponent)
         , SessionId(std::move(sessionId))
         , Path(std::move(path))
@@ -78,12 +78,12 @@ private:
     NActors::TActorId Owner;
 
     TString Path;
-    uint64_t Cookie;
+    ui64 Cookie;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTableCreateActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
+NActors::IActor* CreateKVTableCreateActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie) {
     return new TKVTableCreateActor(logComponent, std::move(sessionId), std::move(path), cookie);
 }
 

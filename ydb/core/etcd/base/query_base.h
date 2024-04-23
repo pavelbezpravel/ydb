@@ -1,19 +1,23 @@
 #pragma once
 
+#include <limits>
+
 #include <ydb/library/query_actor/query_actor.h>
 
 namespace NYdb::NEtcd {
 
 class TQueryBase : public NKikimr::TQueryBase {
 public:
-    TQueryBase(ui64 logComponent, TString&& sessionId, TString database, TString path, TTxControl txControl, TString&& txId = {})
+    TQueryBase(ui64 logComponent, TString&& sessionId, TString database, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision)
         : NKikimr::TQueryBase(logComponent, sessionId, database)
         , Path(path)
-        , TxControl(txControl) {
-            TxId = std::move(txId);
+        , TxControl(txControl)
+        , Cookie(cookie)
+        , Revision(revision) {
+        TxId = std::move(txId);
     }
 
-    static inline std::pair<TTxControl, TTxControl> Split(TTxControl txControl) {
+    [[nodiscard]] static inline std::pair<TTxControl, TTxControl> Split(TTxControl txControl) noexcept {
         if (txControl == TTxControl::BeginTx()) {
             return {TTxControl::BeginTx(), TTxControl::ContinueTx()};
         } else if (txControl == TTxControl::BeginAndCommitTx()) {
@@ -27,9 +31,28 @@ public:
         }
     }
 
+    [[nodiscard]] static inline TString GetPrefix(TString key) noexcept {
+        while (!key.empty()) {
+            if (static_cast<unsigned char>(key.back()) < std::numeric_limits<unsigned char>::max()) {
+                char key_back = key.back();
+                ++key_back;
+                key.back() = key_back;
+                return key;
+            }
+            key.pop_back();
+        }
+        return TString{kEmptyKey};
+    }
+
 protected:
+    static constexpr TStringBuf kEmptyKey{"\0", 1};
+    static_assert(kEmptyKey.size() == 1);
+
     TString Path;
     TTxControl TxControl;
+
+    ui64 Cookie;
+    i64 Revision;
 };
 
 } // namespace NYdb::NEtcd

@@ -4,17 +4,20 @@
 
 namespace NYdb::NEtcd {
 
+struct TCompactionRequest;
 struct TDeleteRangeRequest;
 struct TPutRequest;
 struct TRangeRequest;
 struct TTxnRequest;
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TDeleteRangeRequest deleteRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TCompactionRequest request);
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TPutRequest putRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TDeleteRangeRequest request);
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TRangeRequest rangeRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TPutRequest request);
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie, TTxnRequest txnRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TRangeRequest request);
+
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request);
 
 } // namespace NYdb::NEtcd

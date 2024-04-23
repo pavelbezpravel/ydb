@@ -19,8 +19,8 @@ namespace NYdb::NEtcd {
 
 struct TKeyValue {
     TString key;
-    i64 create_revision;
     i64 mod_revision;
+    i64 create_revision;
     i64 version;
     TString value;
 };
@@ -58,6 +58,10 @@ struct TRangeResponse {
     TVector<TKeyValue> KVs;
     bool More;
     size_t Count;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
 };
 
 struct TPutRequest {
@@ -68,6 +72,10 @@ struct TPutRequest {
 
 struct TPutResponse {
     TVector<TKeyValue> PrevKVs;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
 };
 
 struct TDeleteRangeRequest {
@@ -79,6 +87,10 @@ struct TDeleteRangeRequest {
 struct TDeleteRangeResponse {
     size_t Deleted;
     TVector<TKeyValue> PrevKVs;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return Deleted > 0;
+    }
 };
 
 struct TTxnRequest;
@@ -127,15 +139,25 @@ struct TTxnRequest {
 struct TTxnResponse {
     bool Succeeded;
     TVector<TResponseOp> Responses;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return std::any_of(Responses.begin(), Responses.end(), [](const TResponseOp& resp) {
+            return std::visit([](const auto& r) { return r->IsWrite(); }, resp);
+        });
+    }
 };
 
 // TODO [pavelbezpravel]: WIP.
 
 struct TCompactionRequest {
-    i64 revision;
-    bool physical;
+    i64 Revision;
+    bool Physical;
 };
 
-struct TCompactionResponse {};
+struct TCompactionResponse {
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
+};
 
 } // namespace NYdb::NEtcd

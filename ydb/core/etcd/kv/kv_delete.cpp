@@ -18,9 +18,7 @@ namespace {
 class TKVDeleteActor : public TQueryBase {
 public:
     TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId))
-        , Revision(revision)
-        , Cookie(cookie)
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , Request(request) {
     }
 
@@ -47,12 +45,10 @@ public:
 
         if (Request.PrevKV) {
             query << R"(
-            SELECT * FROM $prev_kv;
-            )";
+            SELECT * FROM $prev_kv;)";
         } else {
             query << R"(
-            SELECT COUNT(*) AS result FROM $prev_kv;
-            )";
+            SELECT COUNT(*) AS result FROM $prev_kv;)";
         }
 
         NYdb::TParamsBuilder params;
@@ -72,62 +68,53 @@ public:
 
     void OnQueryResult() override {
         if (Request.PrevKV) {
-            if (ResultSets.size() != 1) {
-                Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-                return;
-            }
+            Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
             Response.Deleted = parser.RowsCount();
 
-            Response.PrevKVs.reserve(parser.RowsCount());
+            Response.PrevKVs.reserve(Response.Deleted);
             while (parser.TryNextRow()) {
                 TKeyValue kv{
-                    .key = parser.ColumnParser("key").GetString(),
-                    .create_revision = parser.ColumnParser("create_revision").GetInt64(),
+                    .key = std::move(parser.ColumnParser("key").GetString()),
                     .mod_revision = parser.ColumnParser("mod_revision").GetInt64(),
-                    .version = parser.ColumnParser("version").GetInt64(),
-                    .value = parser.ColumnParser("value").GetString(),
+                    .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                    .version = *parser.ColumnParser("version").GetOptionalInt64(),
+                    .value = std::move(*parser.ColumnParser("value").GetOptionalString()),
                 };
                 Response.PrevKVs.emplace_back(std::move(kv));
             }
         } else {
-            if (ResultSets.size() != 1) {
-                Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-                return;
-            }
+            Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
-            if (parser.RowsCount() != 1) {
-                Finish(Ydb::StatusIds::INTERNAL_ERROR, "Expected 1 row in database response");
-                return;
-            }
+            Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
 
             parser.TryNextRow();
 
             Response.Deleted = parser.ColumnParser("result").GetUint64();
         }
 
+        DeleteSession = TxControl.Commit;
+
         Finish();
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 
 private:
-    i64 Revision;
-    uint64_t Cookie;
     TDeleteRangeRequest Request;
     TDeleteRangeResponse Response;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVDeleteActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, uint64_t cookie, TDeleteRangeRequest request) {
-    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, cookie, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TDeleteRangeRequest request) {
+    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

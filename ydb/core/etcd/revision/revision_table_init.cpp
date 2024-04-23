@@ -23,8 +23,7 @@ namespace {
 class TRevisionTableInitActor : public TQueryBase {
 public:
     TRevisionTableInitActor(ui64 logComponent, TString&& sessionId, TString path, uint64_t cookie)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, TTxControl::BeginAndCommitTx())
-        , Cookie(cookie) {
+        : TQueryBase(logComponent, std::move(sessionId), path, path, TTxControl::BeginAndCommitTx(), {}, cookie, {}) {
     }
 
     // TODO [pavelbezpravel]: fix prefix.
@@ -33,23 +32,20 @@ public:
             PRAGMA TablePathPrefix("/Root/.etcd");
 
             $initial = AsList(
-                AsStruct(FALSE AS id, Int64("0") AS revision),
+                AsStruct(FALSE AS id, Int64("1") AS revision),
             );
             UPSERT
                 INTO revision
                 SELECT *
                     FROM AS_TABLE($initial);
-            SELECT revision FROM AS_TABLE($initial);
-        )");
+            SELECT revision FROM AS_TABLE($initial);)"
+        );
 
         RunDataQuery(query, nullptr, TxControl);
     }
 
     void OnQueryResult() override {
-        if (ResultSets.size() != 1) {
-            Finish(Ydb::StatusIds::INTERNAL_ERROR, "Unexpected database response");
-            return;
-        }
+        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
         NYdb::TResultSetParser parser(ResultSets[0]);
         parser.TryNextRow();
@@ -62,15 +58,11 @@ public:
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
         Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision), {}, Cookie);
     }
-
-private:
-    i64 Revision;
-    uint64_t Cookie;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionTableInitActor(ui64 logComponent, TString sessionId, TString path, uint64_t cookie) {
+NActors::IActor* CreateRevisionTableInitActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie) {
     return new TRevisionTableInitActor(logComponent, std::move(sessionId), std::move(path), cookie);
 }
 

@@ -1,6 +1,7 @@
 LIBRARY()
 
 SRCS(
+    revision_get.cpp
     revision_inc.cpp
     revision_table_create.cpp
     revision_table_init.cpp
