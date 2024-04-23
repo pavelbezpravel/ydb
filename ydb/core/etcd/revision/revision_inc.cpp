@@ -19,6 +19,7 @@ class TRevisionIncActor : public TQueryBase {
 public:
     TRevisionIncActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, {}) {
+            LOG_E("[TRevisionIncActor] TRevisionIncActor::TRevisionIncActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {
@@ -57,6 +58,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        LOG_E("[TRevisionIncActor] TRevisionIncActor::OnFinish(); Revision: " << Revision);
         Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision), {}, Cookie);
     }
 };

@@ -21,6 +21,7 @@ public:
     TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , Request(request) {
+            LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
     void OnRunQuery() override {
@@ -146,6 +147,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        LOG_E("[TKVRangeActor] TKVRangeActor::OnFinish(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 

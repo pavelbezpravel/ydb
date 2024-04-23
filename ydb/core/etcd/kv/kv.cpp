@@ -86,8 +86,8 @@ protected:
     }
 
     STRICT_STFUNC(KVStateFunc, hFunc(TEvResp, Handle))
-
     void Handle(TEvResp::TPtr& ev) {
+        LOG_E("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             this->Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;

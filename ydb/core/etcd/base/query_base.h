@@ -2,7 +2,12 @@
 
 #include <limits>
 
+#include <limits>
+
+#include <ydb/library/actors/core/log.h>
 #include <ydb/library/query_actor/query_actor.h>
+
+#define LOG_E(stream) LOG_ERROR_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, "[ydb] [ETCD_FEATURE]: " << stream)
 
 namespace NYdb::NEtcd {
 

@@ -20,6 +20,7 @@ public:
     TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , Request(request) {
+            LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
 
     void OnRunQuery() override {
@@ -103,6 +104,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        LOG_E("[TKVDeleteActor] TKVDeleteActor::OnFinish(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 

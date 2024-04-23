@@ -23,6 +23,7 @@ public:
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , RequestIndex(-1)
         , Request(request) {
+            LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
     void OnRunQuery() override {
@@ -145,6 +146,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 

@@ -24,6 +24,7 @@ class TRevisionTableInitActor : public TQueryBase {
 public:
     TRevisionTableInitActor(ui64 logComponent, TString&& sessionId, TString path, uint64_t cookie)
         : TQueryBase(logComponent, std::move(sessionId), path, path, TTxControl::BeginAndCommitTx(), {}, cookie, {}) {
+            LOG_E("[TRevisionTableInitActor] TRevisionTableInitActor::TRevisionTableInitActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     // TODO [pavelbezpravel]: fix prefix.
