@@ -19,6 +19,7 @@ class TKVPutActor : public TQueryBase {
 public:
     TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TPutRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+        , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
             LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
@@ -61,9 +62,8 @@ public:
                         COALESCE(version, 0) + 1 AS version,
                         NULL AS delete_revision,
                         %s AS value,
-                    FROM $next_kv;
-        )",
-        Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key " || key || " is absent"))" : "new_value"
+                    FROM $next_kv;)",
+            Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key " || key || " is absent"))" : "new_value"
         );
 
         if (Request.PrevKV) {
@@ -119,7 +119,12 @@ public:
             Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
         }
 
-        DeleteSession = TxControl.Commit;
+        DeleteSession = CommitTx && !Response.IsWrite();
+
+        if (DeleteSession) {
+            CommitTransaction();
+            return;
+        }
 
         Finish();
     }
@@ -130,6 +135,7 @@ public:
     }
 
 private:
+    bool CommitTx;
     TPutRequest Request;
     TPutResponse Response;
 };

@@ -19,6 +19,7 @@ class TKVDeleteActor : public TQueryBase {
 public:
     TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, uint64_t cookie, TDeleteRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+        , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
             LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
@@ -101,7 +102,12 @@ public:
             Response.Deleted = parser.ColumnParser("result").GetUint64();
         }
 
-        DeleteSession = TxControl.Commit;
+        DeleteSession = CommitTx && !Response.IsWrite();
+
+        if (DeleteSession) {
+            CommitTransaction();
+            return;
+        }
 
         Finish();
     }
@@ -112,6 +118,7 @@ public:
     }
 
 private:
+    bool CommitTx;
     TDeleteRangeRequest Request;
     TDeleteRangeResponse Response;
 };
