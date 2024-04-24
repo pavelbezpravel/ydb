@@ -42,7 +42,7 @@ public:
             DECLARE $max_mod_revision AS Int64;
             DECLARE $limit AS Uint64;
 
-            SELECT kv.*, COUNT(*) OVER() AS count
+            SELECT %s
                 FROM kv
                 WHERE %s
                     AND mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision)
@@ -50,6 +50,7 @@ public:
                     AND create_revision <= $max_create_revision
                     AND $min_mod_revision <= mod_revision
                     AND mod_revision <= $max_mod_revision)",
+            Request.CountOnly ? "COUNT(*) AS count" : "kv.*, COUNT(*) OVER() AS count",
             compareCond.c_str()
         );
 
@@ -130,24 +131,34 @@ public:
 
         NYdb::TResultSetParser parser(ResultSets[0]);
 
-        Response.Count = 0;
-        auto responseCount = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
+        if (Request.CountOnly) {
+            Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
 
-        Response.More = parser.RowsCount() > responseCount;
-
-        Response.KVs.reserve(responseCount);
-        while (Response.KVs.size() < responseCount) {
             parser.TryNextRow();
-            Response.Count= parser.ColumnParser("count").GetUint64();
 
-            TKeyValue kv{
-                .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
-                .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
-                .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
-                .Version = *parser.ColumnParser("version").GetOptionalInt64(),
-                .Value = std::move(*parser.ColumnParser("value").GetOptionalString()),
-            };
-            Response.KVs.emplace_back(std::move(kv));
+            Response.Count = parser.ColumnParser("count").GetUint64();
+            Response.More = false;
+            Response.KVs = {};
+        } else {
+            Response.Count = 0;
+            auto responseCount = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
+
+            Response.More = parser.RowsCount() > responseCount;
+
+            Response.KVs.reserve(responseCount);
+            while (Response.KVs.size() < responseCount) {
+                parser.TryNextRow();
+                Response.Count = parser.ColumnParser("count").GetUint64();
+
+                TKeyValue kv{
+                    .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                    .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
+                    .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                    .Version = *parser.ColumnParser("version").GetOptionalInt64(),
+                    .Value = Request.KeysOnly ? "" : std::move(*parser.ColumnParser("value").GetOptionalString()),
+                };
+                Response.KVs.emplace_back(std::move(kv));
+            }
         }
 
         DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
