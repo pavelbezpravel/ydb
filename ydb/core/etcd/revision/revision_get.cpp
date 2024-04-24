@@ -18,7 +18,7 @@ namespace {
 class TRevisionGetActor : public TQueryBase {
 public:
     TRevisionGetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie)
-        : TQueryBase(logComponent, std::move(sessionId), NKikimr::JoinPath({path, "revision"}), std::move(path), txControl, std::move(txId), cookie, {}) {
+        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, {}) {
     }
 
     void OnRunQuery() override {

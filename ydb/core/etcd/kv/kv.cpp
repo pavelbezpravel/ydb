@@ -94,6 +94,7 @@ protected:
 
         if (!Response.IsWrite()) {
             this->Finish();
+            return;
         }
 
         this->RegisterRevisionIncRequest(TxControl);
