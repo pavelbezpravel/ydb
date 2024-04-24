@@ -44,9 +44,9 @@ struct TRangeRequest {
     };
     enum class ESortTarget {
         KEY,
+        VERSION,
         CREATE,
         MOD,
-        VERSION,
         VALUE,
     };
 

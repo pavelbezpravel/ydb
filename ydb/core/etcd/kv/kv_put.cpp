@@ -17,11 +17,12 @@ namespace {
 
 class TKVPutActor : public TQueryBase {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TPutRequest&& request)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TPutRequest&& request, bool isFirstRequest)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
-        , Request(request) {
-            LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
+        , Request(request)
+        , IsFirstRequest(isFirstRequest) {
+            LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request << " IsFirstRequest: " << IsFirstRequest);
     }
 
     void OnRunQuery() override {
@@ -74,7 +75,7 @@ public:
         NYdb::TParamsBuilder params;
         params
             .AddParam("$revision")
-                .Int64(Revision)
+                .Int64(Revision + !IsFirstRequest)
                 .Build();
 
         auto& newKVParam = params.AddParam("$new_kv");
@@ -121,7 +122,7 @@ public:
             Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
         }
 
-        DeleteSession = CommitTx && !Response.IsWrite();
+        DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
 
         if (DeleteSession) {
             CommitTransaction();
@@ -140,12 +141,13 @@ private:
     bool CommitTx;
     TPutRequest Request;
     TPutResponse Response;
+    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TPutRequest request, bool isFirstRequest) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
 }
 
 } // namespace NYdb::NEtcd

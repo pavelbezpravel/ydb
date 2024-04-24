@@ -17,11 +17,12 @@ namespace {
 
 class TKVDeleteActor : public TQueryBase {
 public:
-    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, uint64_t cookie, i64 revision, TDeleteRangeRequest&& request)
+    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, uint64_t cookie, i64 revision, TDeleteRangeRequest&& request, bool isFirstRequest)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
-        , Request(request) {
-            LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
+        , Request(request)
+        , IsFirstRequest(isFirstRequest) {
+            LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request << " IsFirstRequest: " << IsFirstRequest);
     }
 
     void OnRunQuery() override {
@@ -59,7 +60,7 @@ public:
         NYdb::TParamsBuilder params;
         params
             .AddParam("$revision")
-                .Int64(Revision)
+                .Int64(Revision + !IsFirstRequest)
                 .Build()
             .AddParam("$key")
                 .String(Request.Key)
@@ -104,7 +105,7 @@ public:
             Response.Deleted = parser.ColumnParser("result").GetUint64();
         }
 
-        DeleteSession = CommitTx && !Response.IsWrite();
+        DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
 
         if (DeleteSession) {
             CommitTransaction();
@@ -123,12 +124,13 @@ private:
     bool CommitTx;
     TDeleteRangeRequest Request;
     TDeleteRangeResponse Response;
+    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TDeleteRangeRequest request) {
-    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TDeleteRangeRequest request, bool isFirstRequest) {
+    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
 }
 
 } // namespace NYdb::NEtcd

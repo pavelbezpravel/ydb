@@ -18,11 +18,12 @@ namespace {
 
 class TKVRangeActor : public TQueryBase {
 public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TRangeRequest&& request)
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TRangeRequest&& request, bool isFirstRequest)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
-        , Request(request) {
-        LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
+        , Request(request)
+        , IsFirstRequest(isFirstRequest) {
+        LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request << " IsFirstRequest: " << IsFirstRequest);
     }
 
     void OnRunQuery() override {
@@ -39,12 +40,12 @@ public:
             DECLARE $max_create_revision AS Int64;
             DECLARE $min_mod_revision AS Int64;
             DECLARE $max_mod_revision AS Int64;
-            DECLARE $limit AS Int64;
+            DECLARE $limit AS Uint64;
 
             SELECT kv.*, COUNT(*) OVER() AS count
                 FROM kv
                 WHERE %s
-                    AND create_revision <= $revision AND (delete_revision IS NULL OR $revision <= delete_revision)
+                    AND mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision)
                     AND $min_create_revision <= create_revision
                     AND create_revision <= $max_create_revision
                     AND $min_mod_revision <= mod_revision
@@ -116,7 +117,7 @@ public:
                 .Int64(Request.MaxModRevision == 0 ? std::numeric_limits<i64>::max() : Request.MaxModRevision)
                 .Build()
             .AddParam("$limit")
-                .Int64(Request.Limit + 1) // to fill TRangeResponse::more field
+                .Uint64(Request.Limit + 1) // to fill TRangeResponse::more field
                 .Build();
 
         RunDataQuery(query, &params, TxControl);
@@ -129,13 +130,15 @@ public:
 
         NYdb::TResultSetParser parser(ResultSets[0]);
 
-        Response.Count = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
+        Response.Count = 0;
+        auto responseCount = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
 
-        Response.More = parser.RowsCount() > Response.Count;
+        Response.More = parser.RowsCount() > responseCount;
 
-        Response.KVs.reserve(Response.Count);
-        while (Response.KVs.size() < Response.Count) {
+        Response.KVs.reserve(responseCount);
+        while (Response.KVs.size() < responseCount) {
             parser.TryNextRow();
+            Response.Count= parser.ColumnParser("count").GetUint64();
 
             TKeyValue kv{
                 .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
@@ -147,7 +150,7 @@ public:
             Response.KVs.emplace_back(std::move(kv));
         }
 
-        DeleteSession = CommitTx && !Response.IsWrite();
+        DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
 
         if (DeleteSession) {
             CommitTransaction();
@@ -166,12 +169,13 @@ private:
     bool CommitTx;
     TRangeRequest Request;
     TRangeResponse Response;
+    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TRangeRequest request) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TRangeRequest request, bool isFirstRequest) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
 }
 
 } // namespace NYdb::NEtcd

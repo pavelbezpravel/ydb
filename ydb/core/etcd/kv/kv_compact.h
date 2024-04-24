@@ -7,6 +7,6 @@ namespace NYdb::NEtcd {
 
 struct TCompactionRequest;
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TCompactionRequest request);
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TCompactionRequest request, bool isFirstRequest);
 
 } // namespace NYdb::NEtcd

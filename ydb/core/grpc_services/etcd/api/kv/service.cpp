@@ -115,13 +115,10 @@ using TCompactRPC = TEtcdKVRequestRPC<
     NYdb::NEtcd::TEvEtcdKV::TEvCompactionRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvCompactionResponse>;
 
-// TODO [pavelbezpravel]: WIP.
 void DoCompact(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    // auto* req = dynamic_cast<TRpcCompactionRequest*>(p.release());
-    // Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
-    // f.RegisterActor(new TCompactRPC(req));
-    Y_UNUSED(p);
-    Y_UNUSED(f);
+    auto* req = dynamic_cast<TRpcCompactionRequest*>(p.release());
+    Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
+    f.RegisterActor(new TCompactRPC(req));
 }
 
 } // namespace NEtcd

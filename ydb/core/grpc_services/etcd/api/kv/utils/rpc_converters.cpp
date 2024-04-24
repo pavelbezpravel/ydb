@@ -22,17 +22,19 @@ NYdb::NEtcd::TRangeRequest FillRequest(const etcdserverpb::RangeRequest& request
 
 etcdserverpb::RangeResponse FillResponse(const NYdb::NEtcd::TRangeResponse& response) {
     auto out = etcdserverpb::RangeResponse{};
+    auto* header = out.mutable_header();
+    header->set_revision(response.Revision);
 
     auto* kvs = out.mutable_kvs();
     kvs->Reserve(response.KVs.size());
 
     for (const auto& KV : response.KVs) {
         auto* kv = kvs->Add();
-        kv->set_key(KV.key);
-        kv->set_create_revision(KV.create_revision);
-        kv->set_mod_revision(KV.mod_revision);
-        kv->set_version(KV.version);
-        kv->set_value(KV.value);
+        kv->set_key(KV.Key);
+        kv->set_create_revision(KV.CreateRevision);
+        kv->set_mod_revision(KV.ModRevision);
+        kv->set_version(KV.Version);
+        kv->set_value(KV.Value);
     }
     out.set_more(response.More);
     out.set_count(response.Count);
@@ -50,19 +52,21 @@ NYdb::NEtcd::TPutRequest FillRequest(const etcdserverpb::PutRequest& request) {
 
 etcdserverpb::PutResponse FillResponse(const NYdb::NEtcd::TPutResponse& response) {
     auto out = etcdserverpb::PutResponse{};
+    auto* header = out.mutable_header();
+    header->set_revision(response.Revision);
 
     if (response.PrevKVs.empty()) {
-        return {};
+        return out;
     }
 
     auto PrevKV = response.PrevKVs.front();
     auto* kv = out.mutable_prev_kv();
 
-    kv->set_key(PrevKV.key);
-    kv->set_create_revision(PrevKV.create_revision);
-    kv->set_mod_revision(PrevKV.mod_revision);
-    kv->set_version(PrevKV.version);
-    kv->set_value(PrevKV.value);
+    kv->set_key(PrevKV.Key);
+    kv->set_create_revision(PrevKV.CreateRevision);
+    kv->set_mod_revision(PrevKV.ModRevision);
+    kv->set_version(PrevKV.Version);
+    kv->set_value(PrevKV.Value);
 
     return out;
 }
@@ -77,6 +81,8 @@ NYdb::NEtcd::TDeleteRangeRequest FillRequest(const etcdserverpb::DeleteRangeRequ
 
 etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeResponse& response) {
     auto out = etcdserverpb::DeleteRangeResponse{};
+    auto* header = out.mutable_header();
+    header->set_revision(response.Revision);
 
     out.set_deleted(response.Deleted);
 
@@ -85,11 +91,11 @@ etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeRe
 
     for (const auto& PrevKV : response.PrevKVs) {
         auto* kv = prevKVs->Add();
-        kv->set_key(PrevKV.key);
-        kv->set_create_revision(PrevKV.create_revision);
-        kv->set_mod_revision(PrevKV.mod_revision);
-        kv->set_version(PrevKV.version);
-        kv->set_value(PrevKV.value);
+        kv->set_key(PrevKV.Key);
+        kv->set_create_revision(PrevKV.CreateRevision);
+        kv->set_mod_revision(PrevKV.ModRevision);
+        kv->set_version(PrevKV.Version);
+        kv->set_value(PrevKV.Value);
     }
 
     return out;
@@ -105,20 +111,20 @@ NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
         Compare.Result = static_cast<NYdb::NEtcd::TTxnCompareRequest::ECompareResult>(compare.result());
 
         if (compare.has_create_revision()) {
-            Compare.Target_create_revision = compare.create_revision();
+            Compare.TargetCreateRevision = compare.create_revision();
         }
         if (compare.has_mod_revision()) {
-            Compare.Target_mod_revision = compare.mod_revision();
+            Compare.TargetModRevision = compare.mod_revision();
         }
         if (compare.has_version()) {
-            Compare.Target_version = compare.version();
+            Compare.TargetVersion = compare.version();
         }
         if (compare.has_value()) {
-            Compare.Target_value = compare.value();
+            Compare.TargetValue = compare.value();
         }
 
         Compare.Key = compare.key();
-        Compare.Range_end = compare.range_end();
+        Compare.RangeEnd = compare.range_end();
     }
 
     enum {SUCCESS, FAILURE};
@@ -160,6 +166,8 @@ NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
 
 etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response) {
     auto out = etcdserverpb::TxnResponse{};
+    auto* header = out.mutable_header();
+    header->set_revision(response.Revision);
 
     out.set_succeeded(response.Succeeded);
 
@@ -195,8 +203,10 @@ NYdb::NEtcd::TCompactionRequest FillRequest(const etcdserverpb::CompactionReques
 }
 
 etcdserverpb::CompactionResponse FillResponse(const NYdb::NEtcd::TCompactionResponse& response) {
-    Y_UNUSED(response);
-    return {};
+    auto out = etcdserverpb::CompactionResponse{};
+    auto* header = out.mutable_header();
+    header->set_revision(response.Revision);
+    return out;
 }
 
 } // namespace NKikimr::NGRpcService::NEtcd
