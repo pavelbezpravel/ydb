@@ -21,6 +21,7 @@ class TKVTxnActor : public TQueryBase {
 public:
     TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request, bool isFirstRequest)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+        , CommitTx(std::exchange(TxControl.Commit, false))
         , RequestIndex(-1)
         , Request(request)
         , IsFirstRequest(isFirstRequest) {
@@ -40,13 +41,12 @@ public:
                 target_value: String,
             >>;
 
-            $compare_type = Enum<Equal, Greater, Less, NotEqual>;
             $compare = ($op, $lhs, $rhs) -> {
-                RETURN CASE Enum($op, $compare_type)
-                    WHEN Enum("Equal",    $compare_type) THEN $lhs == $rhs
-                    WHEN Enum("Greater",  $compare_type) THEN $lhs >  $rhs
-                    WHEN Enum("Less",     $compare_type) THEN $lhs <  $rhs
-                    WHEN Enum("NotEqual", $compare_type) THEN $lhs != $rhs
+                RETURN CASE $op
+                    WHEN "Equal"    THEN $lhs == $rhs
+                    WHEN "Greater"  THEN $lhs >  $rhs
+                    WHEN "Less"     THEN $lhs <  $rhs
+                    WHEN "NotEqual" THEN $lhs != $rhs
                     ELSE false
                 END
             };
@@ -60,8 +60,8 @@ public:
                         ELSE false
                     END, false)) AS result,
                 FROM AS_TABLE($target) AS target_table
-                LEFT JOIN kv           AS source_table USING(key);
-        )");
+                LEFT JOIN kv           AS source_table USING(key);)"
+        );
 
         NYdb::TParamsBuilder params;
 
@@ -89,32 +89,23 @@ public:
                         }
                     }());
 
-            int counter = 0;
             if (TxnCmpRequest.TargetCreateRevision) {
-                ++counter;
                 structBuilder
                     .AddMember("target_create_revision")
                         .OptionalInt64(*TxnCmpRequest.TargetCreateRevision);
-            }
-            if (TxnCmpRequest.TargetModRevision) {
-                ++counter;
+            } else if (TxnCmpRequest.TargetModRevision) {
                 structBuilder
                     .AddMember("target_mod_revision")
                         .OptionalInt64(*TxnCmpRequest.TargetModRevision);
-            }
-            if (TxnCmpRequest.TargetVersion) {
-                ++counter;
+            } else if (TxnCmpRequest.TargetVersion) {
                 structBuilder
                     .AddMember("target_version")
                         .OptionalInt64(*TxnCmpRequest.TargetVersion);
-            }
-            if (TxnCmpRequest.TargetValue) {
-                ++counter;
+            } else if (TxnCmpRequest.TargetValue) {
                 structBuilder
                     .AddMember("target_value")
                         .OptionalString(*TxnCmpRequest.TargetValue);
-            }
-            if (counter != 1) {
+            } else {
                 throw std::runtime_error("Expected exactly 1 target field");
             }
             structBuilder.EndStruct();
@@ -125,7 +116,7 @@ public:
         RunDataQuery(query, &params, TxControl);
     }
 
-    void OnCompareQueryResult() {
+    void OnQueryResult() override {
         Response.Revision = Revision;
 
         Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
@@ -140,13 +131,6 @@ public:
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
         Response.Responses.reserve(Requests.size());
 
-        // TODO [pavelbezpravel]: check delete session && IsFirstRequest flags
-
-        if (TxControl.Commit && Requests.empty()) {
-            CommitTransaction();
-            return;
-        }
-
         RunQuery();
     }
 
@@ -160,8 +144,11 @@ private:
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
+        SessionId = std::move(ev->Get()->SessionId);
+        TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TDeleteRangeResponse>(std::move(ev->Get()->Response)));
 
         RunQuery();
@@ -171,8 +158,11 @@ private:
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
+        SessionId = std::move(ev->Get()->SessionId);
+        TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TPutResponse>(std::move(ev->Get()->Response)));
 
         RunQuery();
@@ -182,8 +172,11 @@ private:
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
+        SessionId = std::move(ev->Get()->SessionId);
+        TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TRangeResponse>(std::move(ev->Get()->Response)));
 
         RunQuery();
@@ -193,8 +186,11 @@ private:
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
 
+        SessionId = std::move(ev->Get()->SessionId);
+        TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TTxnResponse>(std::move(ev->Get()->Response)));
 
         RunQuery();
@@ -204,7 +200,15 @@ private:
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
 
         if (++RequestIndex == Requests.size()) {
+            DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
+
+            if (DeleteSession) {
+                CommitTransaction();
+                return;
+            }
+
             Finish();
+            return;
         }
         auto currTxControl = [&]() {
             if (RequestIndex + 1 == Requests.size()) {
@@ -233,6 +237,7 @@ private:
     }
 
 private:
+    bool CommitTx;
     size_t RequestIndex;
     TTxnRequest Request;
     TTxnResponse Response;
