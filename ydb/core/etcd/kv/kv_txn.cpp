@@ -35,10 +35,10 @@ public:
             DECLARE $target AS List<Struct<
                 key: String,
                 op: String,
-                target_create_revision: Int64,
-                target_mod_revision: Int64,
-                target_version: Int64,
-                target_value: String,
+                target_create_revision: Optional<Int64>,
+                target_mod_revision: Optional<Int64>,
+                target_version: Optional<Int64>,
+                target_value: Optional<String>,
             >>;
 
             $compare = ($op, $lhs, $rhs) -> {
@@ -52,13 +52,13 @@ public:
             };
 
             SELECT
-                    BOOL_AND(COALESCE(CASE
+                    COALESCE(BOOL_AND(CASE
                         WHEN target_create_revision IS NOT NULL THEN $compare(op, create_revision, target_create_revision)
                         WHEN target_mod_revision    IS NOT NULL THEN $compare(op, mod_revision,    target_mod_revision)
                         WHEN target_version         IS NOT NULL THEN $compare(op, version,         target_version)
                         WHEN target_value           IS NOT NULL THEN $compare(op, value,           target_value)
                         ELSE false
-                    END, false)) AS result,
+                    END), false) AS result,
                 FROM AS_TABLE($target) AS target_table
                 LEFT JOIN kv           AS source_table USING(key);)"
         );
@@ -127,7 +127,7 @@ public:
 
         parser.TryNextRow();
 
-        Response.Succeeded = parser.ColumnParser("result").GetBool();
+        Response.Succeeded = *parser.ColumnParser("result").GetOptionalBool();
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
         Response.Responses.reserve(Requests.size());
 
@@ -135,7 +135,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); Response: " << Response);
+        LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 
