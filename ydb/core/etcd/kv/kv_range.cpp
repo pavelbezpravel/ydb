@@ -26,7 +26,7 @@ public:
     }
 
     void OnRunQuery() override {
-        auto compareCond = Compare(Request.key, Request.range_end);
+        auto compareCond = Compare(Request.Key, Request.RangeEnd);
 
         TStringBuilder query;
         query << Sprintf(R"(
@@ -52,9 +52,9 @@ public:
             compareCond.c_str()
         );
 
-        if (Request.sort_order != TRangeRequest::ESortOrder::NONE) {
+        if (Request.SortOrder != TRangeRequest::ESortOrder::NONE) {
             TString order = [&]() {
-                switch (Request.sort_order) {
+                switch (Request.SortOrder) {
                     case TRangeRequest::ESortOrder::ASCEND:
                         return "ASC";
                     case TRangeRequest::ESortOrder::DESCEND:
@@ -65,7 +65,7 @@ public:
             }();
 
             TString target = [&]() {
-                switch (Request.sort_target) {
+                switch (Request.SortTarget) {
                     case TRangeRequest::ESortTarget::KEY:
                         return "key";
                     case TRangeRequest::ESortTarget::CREATE:
@@ -85,7 +85,7 @@ public:
                     ORDER BY %s %s)", target.c_str(), order.c_str());
         }
 
-        if (Request.limit > 0) {
+        if (Request.Limit > 0) {
             query << R"(
                 LIMIT $limit)";
         }
@@ -95,39 +95,41 @@ public:
         NYdb::TParamsBuilder params;
         params
             .AddParam("$revision")
-                .Int64(Request.revision == 0 ? Revision : Request.revision)
+                .Int64(Request.Revision == 0 ? Revision : Request.Revision)
                 .Build()
             .AddParam("$key")
-                .String(Request.key)
+                .String(Request.Key)
                 .Build()
             .AddParam("$range_end")
-                .String(Request.range_end)
+                .String(Request.RangeEnd)
                 .Build()
             .AddParam("$min_create_revision")
-                .Int64(Request.min_create_revision == 0 ? 0 : Request.min_create_revision)
+                .Int64(Request.MinCreateRevision == 0 ? 0 : Request.MinCreateRevision)
                 .Build()
             .AddParam("$max_create_revision")
-                .Int64(Request.max_create_revision == 0 ? std::numeric_limits<i64>::max() : Request.max_create_revision)
+                .Int64(Request.MaxCreateRevision == 0 ? std::numeric_limits<i64>::max() : Request.MaxCreateRevision)
                 .Build()
             .AddParam("$min_mod_revision")
-                .Int64(Request.min_mod_revision == 0 ? 0 : Request.min_mod_revision)
+                .Int64(Request.MinModRevision == 0 ? 0 : Request.MinModRevision)
                 .Build()
             .AddParam("$max_mod_revision")
-                .Int64(Request.max_mod_revision == 0 ? std::numeric_limits<i64>::max() : Request.max_mod_revision)
+                .Int64(Request.MaxModRevision == 0 ? std::numeric_limits<i64>::max() : Request.MaxModRevision)
                 .Build()
             .AddParam("$limit")
-                .Int64(Request.limit + 1) // to fill TRangeResponse::more field
+                .Int64(Request.Limit + 1) // to fill TRangeResponse::more field
                 .Build();
 
         RunDataQuery(query, &params, TxControl);
     }
 
     void OnQueryResult() override {
+        Response.Revision = Revision;
+
         Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
         NYdb::TResultSetParser parser(ResultSets[0]);
 
-        Response.Count = Request.limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.limit);
+        Response.Count = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
 
         Response.More = parser.RowsCount() > Response.Count;
 
@@ -136,11 +138,11 @@ public:
             parser.TryNextRow();
 
             TKeyValue kv{
-                .key = std::move(*parser.ColumnParser("key").GetOptionalString()),
-                .mod_revision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
-                .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
-                .version = *parser.ColumnParser("version").GetOptionalInt64(),
-                .value = std::move(*parser.ColumnParser("value").GetOptionalString()),
+                .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
+                .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                .Version = *parser.ColumnParser("version").GetOptionalInt64(),
+                .Value = std::move(*parser.ColumnParser("value").GetOptionalString()),
             };
             Response.KVs.emplace_back(std::move(kv));
         }

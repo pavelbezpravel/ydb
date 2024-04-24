@@ -72,6 +72,8 @@ public:
     }
 
     void OnQueryResult() override {
+        Response.Revision = Revision;
+
         if (Request.PrevKV) {
             Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
@@ -82,11 +84,11 @@ public:
             Response.PrevKVs.reserve(Response.Deleted);
             while (parser.TryNextRow()) {
                 TKeyValue kv{
-                    .key = std::move(*parser.ColumnParser("key").GetOptionalString()),
-                    .mod_revision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
-                    .create_revision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
-                    .version = *parser.ColumnParser("version").GetOptionalInt64(),
-                    .value = std::move(*parser.ColumnParser("value").GetOptionalString()),
+                    .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                    .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
+                    .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                    .Version = *parser.ColumnParser("version").GetOptionalInt64(),
+                    .Value = std::move(*parser.ColumnParser("value").GetOptionalString()),
                 };
                 Response.PrevKVs.emplace_back(std::move(kv));
             }

@@ -89,29 +89,29 @@ public:
                     }());
 
             int counter = 0;
-            if (TxnCmpRequest.Target_create_revision) {
+            if (TxnCmpRequest.TargetCreateRevision) {
                 ++counter;
                 structBuilder
                     .AddMember("target_create_revision")
-                        .OptionalInt64(*TxnCmpRequest.Target_create_revision);
+                        .OptionalInt64(*TxnCmpRequest.TargetCreateRevision);
             }
-            if (TxnCmpRequest.Target_mod_revision) {
+            if (TxnCmpRequest.TargetModRevision) {
                 ++counter;
                 structBuilder
                     .AddMember("target_mod_revision")
-                        .OptionalInt64(*TxnCmpRequest.Target_mod_revision);
+                        .OptionalInt64(*TxnCmpRequest.TargetModRevision);
             }
-            if (TxnCmpRequest.Target_version) {
+            if (TxnCmpRequest.TargetVersion) {
                 ++counter;
                 structBuilder
                     .AddMember("target_version")
-                        .OptionalInt64(*TxnCmpRequest.Target_version);
+                        .OptionalInt64(*TxnCmpRequest.TargetVersion);
             }
-            if (TxnCmpRequest.Target_value) {
+            if (TxnCmpRequest.TargetValue) {
                 ++counter;
                 structBuilder
                     .AddMember("target_value")
-                        .OptionalString(*TxnCmpRequest.Target_value);
+                        .OptionalString(*TxnCmpRequest.TargetValue);
             }
             if (counter != 1) {
                 throw std::runtime_error("Expected exactly 1 target field");
@@ -125,6 +125,8 @@ public:
     }
 
     void OnCompareQueryResult() {
+        Response.Revision = Revision;
+
         Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
 
         NYdb::TResultSetParser parser(ResultSets[0]);

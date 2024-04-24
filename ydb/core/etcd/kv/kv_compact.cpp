@@ -45,6 +45,8 @@ public:
     }
 
     void OnQueryResult() override {
+        Response.Revision = Revision;
+
         Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
 
         DeleteSession = CommitTx && !Response.IsWrite();

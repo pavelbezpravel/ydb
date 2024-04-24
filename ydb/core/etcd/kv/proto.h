@@ -18,19 +18,19 @@
 namespace NYdb::NEtcd {
 
 struct TKeyValue {
-    TString key;
-    i64 mod_revision;
-    i64 create_revision;
-    i64 version;
-    TString value;
+    TString Key;
+    i64 ModRevision;
+    i64 CreateRevision;
+    i64 Version;
+    TString Value;
 
     friend IOutputStream& operator<<(IOutputStream& str, const TKeyValue& data) {
         str << "{ "
-            << "key: \"" << data.key << "\", "
-            << "value: \"" << data.value << "\", "
-            << "create_revision: " << data.create_revision << ", "
-            << "mod_revision: " << data.mod_revision << ", "
-            << "version: " << data.version
+            << "Key: \"" << data.Key << "\", "
+            << "Value: \"" << data.Value << "\", "
+            << "CreateRevision: " << data.CreateRevision << ", "
+            << "ModRevision: " << data.ModRevision << ", "
+            << "Version: " << data.Version
             << " }";
         return str;
     }
@@ -50,44 +50,49 @@ struct TRangeRequest {
         VALUE,
     };
 
-    TString key;
-    TString range_end;
-    size_t limit;
-    i64 revision;
-    ESortOrder sort_order;
-    ESortTarget sort_target;
-    bool serializable;
-    bool keys_only;
-    bool count_only;
-    i64 min_mod_revision;
-    i64 max_mod_revision;
-    i64 min_create_revision;
-    i64 max_create_revision;
+    TString Key;
+    TString RangeEnd;
+    size_t Limit;
+    i64 Revision;
+    ESortOrder SortOrder;
+    ESortTarget SortTarget;
+    bool Serializable;
+    bool KeysOnly;
+    bool CountOnly;
+    i64 MinModRevision;
+    i64 MaxModRevision;
+    i64 MinCreateRevision;
+    i64 MaxCreateRevision;
 
     friend IOutputStream& operator<<(IOutputStream& str, const TRangeRequest& data) {
         str << "[TRangeRequest] { "
-            << "key: \"" << data.key << "\", "
-            << "range_end: \"" << data.range_end << "\", "
-            << "limit: " << data.limit << ", "
-            << "revision: " << data.revision << ", "
-            << "sort_order: " << std::underlying_type_t<ESortOrder>(data.sort_order) << ", "
-            << "sort_target: " << std::underlying_type_t<ESortTarget>(data.sort_target) << ", "
-            << "serializable: " << data.serializable << ", "
-            << "keys_only: " << data.keys_only << ", "
-            << "count_only: " << data.count_only << ", "
-            << "min_mod_revision: " << data.min_mod_revision << ", "
-            << "max_mod_revision: " << data.max_mod_revision << ", "
-            << "min_create_revision: " << data.min_create_revision << ", "
-            << "max_create_revison: " << data.max_create_revision
+            << "Key: \"" << data.Key << "\", "
+            << "RangeEnd: \"" << data.RangeEnd << "\", "
+            << "Limit: " << data.Limit << ", "
+            << "Revision: " << data.Revision << ", "
+            << "SortOrder: " << std::underlying_type_t<ESortOrder>(data.SortOrder) << ", "
+            << "SortTarget: " << std::underlying_type_t<ESortTarget>(data.SortTarget) << ", "
+            << "Serializable: " << data.Serializable << ", "
+            << "KeysOnly: " << data.KeysOnly << ", "
+            << "CountOnly: " << data.CountOnly << ", "
+            << "MinModRevision: " << data.MinModRevision << ", "
+            << "MaxModRevision: " << data.MaxModRevision << ", "
+            << "MinCreateRevision: " << data.MinCreateRevision << ", "
+            << "MaxCreateRevison: " << data.MaxCreateRevision
             << " }";
         return str;
     }
 };
 
 struct TRangeResponse {
+    i64 Revision;
     TVector<TKeyValue> KVs;
     bool More;
     size_t Count;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TRangeResponse& data) {
         str << "[TRangeResponse] { "
@@ -101,10 +106,6 @@ struct TRangeResponse {
 
         str << " }";
         return str;
-    }
-
-    [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return false;
     }
 };
 
@@ -128,7 +129,12 @@ struct TPutRequest {
 };
 
 struct TPutResponse {
+    i64 Revision;
     TVector<TKeyValue> PrevKVs;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TPutResponse& data) {
         str << "[TPutResponse] { "
@@ -140,10 +146,6 @@ struct TPutResponse {
 
         str << " } }";
         return str;
-    }
-
-    [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return true;
     }
 };
 
@@ -163,8 +165,13 @@ struct TDeleteRangeRequest {
 };
 
 struct TDeleteRangeResponse {
+    i64 Revision;
     size_t Deleted;
     TVector<TKeyValue> PrevKVs;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return Deleted > 0;
+    }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TDeleteRangeResponse& data) {
         str << "[TDeleteRangeResponse] { "
@@ -176,10 +183,6 @@ struct TDeleteRangeResponse {
         }
         str << " } }";
         return str;
-    }
-
-    [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return Deleted > 0;
     }
 };
 
@@ -209,36 +212,37 @@ struct TTxnCompareRequest {
         NOT_EQUAL,
     };
     ECompareResult Result;
-    TMaybe<i64> Target_create_revision;
-    TMaybe<i64> Target_mod_revision;
-    TMaybe<i64> Target_version;
-    TMaybe<TString> Target_value;
+    TMaybe<i64> TargetCreateRevision;
+    TMaybe<i64> TargetModRevision;
+    TMaybe<i64> TargetVersion;
+    TMaybe<TString> TargetValue;
     TString Key;
-    TString Range_end;
+    TString RangeEnd;
 
     friend IOutputStream& operator<<(IOutputStream& str, const TTxnCompareRequest& data) {
         str << "[TTxnCompareRequest] { "
             << "Result: " << std::underlying_type_t<ECompareResult>(data.Result) << ", ";
-        if (data.Target_create_revision) {
-            str << "Target_create_revision: " << *data.Target_create_revision << ", ";
+        if (data.TargetCreateRevision) {
+            str << "TargetCreateRevision: " << *data.TargetCreateRevision << ", ";
         }
-        if (data.Target_mod_revision) {
-            str << "Target_mod_revision: " << *data.Target_mod_revision << ", ";
+        if (data.TargetModRevision) {
+            str << "TargetModRevision: " << *data.TargetModRevision << ", ";
         }
-        if (data.Target_version) {
-            str << "Target_version: " << *data.Target_version << ", ";
+        if (data.TargetVersion) {
+            str << "TargetVersion: " << *data.TargetVersion << ", ";
         }
-        if (data.Target_value) {
-            str << "Target_value: " << *data.Target_value << ", ";
+        if (data.TargetValue) {
+            str << "TargetValue: " << *data.TargetValue << ", ";
         }
         str << "Key: \"" << data.Key << "\", "
-            << "Range_end: \"" << data.Range_end << "\" "
+            << "RangeEnd: \"" << data.RangeEnd << "\" "
             << " }";
         return str;
     }
 };
 
 struct TTxnCompareResponse {
+    i64 Revision;
     bool Succeeded;
 
     friend IOutputStream& operator<<(IOutputStream& str, const TTxnCompareResponse& data) {
@@ -278,8 +282,15 @@ struct TTxnRequest {
 };
 
 struct TTxnResponse {
+    i64 Revision;
     bool Succeeded;
     TVector<TResponseOp> Responses;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return std::any_of(Responses.begin(), Responses.end(), [](const TResponseOp& resp) {
+            return std::visit([](const auto& r) { return r->IsWrite(); }, resp);
+        });
+    }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TTxnResponse& data) {
         str << "[TTxnResponse] { "
@@ -295,15 +306,7 @@ struct TTxnResponse {
         str << " } }";
         return str;
     }
-
-    [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return std::any_of(Responses.begin(), Responses.end(), [](const TResponseOp& resp) {
-            return std::visit([](const auto& r) { return r->IsWrite(); }, resp);
-        });
-    }
 };
-
-// TODO [pavelbezpravel]: WIP.
 
 struct TCompactionRequest {
     i64 Revision;
@@ -311,20 +314,21 @@ struct TCompactionRequest {
 
     friend IOutputStream& operator<<(IOutputStream& str, const TCompactionRequest& data) {
         str << "[TCompactionRequest] { "
-            << "revision: " << data.Revision << ", "
-            << "physical: " << data.Physical
+            << "Revision: " << data.Revision << ", "
+            << "Physical: " << data.Physical
             << " }";
         return str;
     }
 };
 
 struct TCompactionResponse {
+    i64 Revision;
+
     [[nodiscard]] constexpr bool IsWrite() const noexcept {
         return false;
     }
 
-    friend IOutputStream& operator<<(IOutputStream& str, const TCompactionResponse& data) {
-        Y_UNUSED(data);
+    friend IOutputStream& operator<<(IOutputStream& str, const TCompactionResponse&) {
         str << "[TCompactionResponse] {}";
         return str;
     }
