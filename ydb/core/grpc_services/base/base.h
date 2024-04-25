@@ -454,26 +454,7 @@ public:
 class IRequestNoOpCtx : public IRequestCtx {
 };
 
-template <typename T>
-concept YdbProto = requires {
-    typename T::status;
-    typename T::issues;
-};
-
-template <typename T>
-concept EtcdProto = requires {
-    !YdbProto<T>;
-};
-
 struct TCommonResponseFillerImpl {
-    // TODO [pavelbezpravel]: it's not the best solution, but it works.
-    template <typename T> requires EtcdProto<T>
-    static void FillImpl(T& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
-        Y_UNUSED(resp);
-        Y_UNUSED(issues);
-        Y_UNUSED(status);
-    }
-
     template <typename T>
     static void FillImpl(T& resp, const NYql::TIssues& issues, Ydb::StatusIds::StatusCode status) {
         resp.set_status(status);
