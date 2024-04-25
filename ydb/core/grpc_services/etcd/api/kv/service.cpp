@@ -15,33 +15,42 @@
 namespace NKikimr::NGRpcService {
 
 template <typename RpcRequestType, typename EvRequestType, typename EvResponseType>
-class TEtcdKVRequestRPC : public NActors::TActorBootstrapped<TEtcdKVRequestRPC<RpcRequestType, EvRequestType, EvResponseType>> {
+class TEtcdKVRequestRPC : public TRpcRequestActor<TEtcdKVRequestRPC<RpcRequestType, EvRequestType, EvResponseType>, RpcRequestType, false> {
 public:
+    using TRpcRequestActorBase = TRpcRequestActor<TEtcdKVRequestRPC<RpcRequestType, EvRequestType, EvResponseType>, RpcRequestType, false>;
+
     static constexpr NKikimrServices::TActivity::EType ActorActivityType() {
         return NKikimrServices::TActivity::GRPC_REQ;
     }
 
     TEtcdKVRequestRPC(RpcRequestType* request)
-        : Request_(request) {}
+        : TRpcRequestActorBase(request) {}
 
     void Bootstrap() {
         this->Become(&TEtcdKVRequestRPC::StateFunc);
-        this->Send(NYdb::NEtcd::MakeEtcdServiceId(), new EvRequestType(NEtcd::FillRequest(*Request_->GetProtoRequest())));
+
+        const auto* req = this->GetProtoRequest();
+        if (!req) {
+            this->Request->ReplyWithRpcStatus(grpc::StatusCode::INTERNAL, "Internal error");
+            return;
+        }
+
+        this->Send(NYdb::NEtcd::MakeEtcdServiceId(), new EvRequestType(NEtcd::FillRequest(*req)));
     }
 
 private:
     STRICT_STFUNC(StateFunc, hFunc(EvResponseType, Handle))
     void Handle(EvResponseType::TPtr& ev) {
-        // if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-        //     Request_->ReplyWithYdbStatus(Ydb::StatusIds::BAD_REQUEST);
-        // }
-        // else
-        Request_->SendSerializedResult(std::move(NEtcd::FillResponse(ev->Get()->Response).SerializeAsString()), Ydb::StatusIds::SUCCESS);
+        if (const auto response = ev->Get()->Response; ev->Get()->Status == Ydb::StatusIds::SUCCESS) {
+            auto out = NEtcd::FillResponse(response);
+            this->Request->Reply(&out, grpc::StatusCode::OK);
+        }
+        else {
+            // TODO [pavelbezpravel]: fill status and error message.
+            this->Request->ReplyWithRpcStatus(grpc::StatusCode::CANCELLED, {});
+        }
         this->PassAway();
     }
-
-private:
-    std::unique_ptr<RpcRequestType> Request_;
 };
 
 namespace NEtcd {
