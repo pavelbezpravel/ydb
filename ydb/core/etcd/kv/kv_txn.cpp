@@ -114,7 +114,7 @@ public:
 
         parser.TryNextRow();
 
-        Response.Succeeded = *parser.ColumnParser("result").GetOptionalBool();
+        Response.Succeeded = parser.ColumnParser("result").GetBool();
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
         Response.Responses.reserve(Requests.size());
 
