@@ -30,8 +30,10 @@ public:
         this->Become(&TEtcdKVRequestRPC::StateFunc);
 
         const auto* req = this->GetProtoRequest();
+
         if (!req) {
             this->Request->ReplyWithRpcStatus(grpc::StatusCode::INTERNAL, "Internal error");
+            this->PassAway();
             return;
         }
 
