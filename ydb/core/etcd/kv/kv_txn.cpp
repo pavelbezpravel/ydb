@@ -68,9 +68,8 @@ public:
         auto& targetParam = params.AddParam("$target");
         targetParam.BeginList();
         for (const auto& TxnCmpRequest : Request.Compare) {
-            targetParam.AddListItem();
-            auto& structBuilder = targetParam.BeginStruct();
-            structBuilder
+            targetParam.AddListItem()
+                .BeginStruct()
                 .AddMember("key")
                     .String(TxnCmpRequest.Key)
                 .AddMember("op")
@@ -87,28 +86,16 @@ public:
                             default:
                                 throw std::runtime_error("Unexpected compare type");
                         }
-                    }());
-
-            if (TxnCmpRequest.TargetCreateRevision) {
-                structBuilder
-                    .AddMember("target_create_revision")
-                        .OptionalInt64(*TxnCmpRequest.TargetCreateRevision);
-            } else if (TxnCmpRequest.TargetModRevision) {
-                structBuilder
-                    .AddMember("target_mod_revision")
-                        .OptionalInt64(*TxnCmpRequest.TargetModRevision);
-            } else if (TxnCmpRequest.TargetVersion) {
-                structBuilder
-                    .AddMember("target_version")
-                        .OptionalInt64(*TxnCmpRequest.TargetVersion);
-            } else if (TxnCmpRequest.TargetValue) {
-                structBuilder
-                    .AddMember("target_value")
-                        .OptionalString(*TxnCmpRequest.TargetValue);
-            } else {
-                throw std::runtime_error("Expected exactly 1 target field");
-            }
-            structBuilder.EndStruct();
+                    }())
+                .AddMember("target_create_revision")
+                    .OptionalInt64(TxnCmpRequest.TargetCreateRevision)
+                .AddMember("target_mod_revision")
+                    .OptionalInt64(TxnCmpRequest.TargetModRevision)
+                .AddMember("target_version")
+                    .OptionalInt64(TxnCmpRequest.TargetVersion)
+                .AddMember("target_value")
+                    .OptionalString(TxnCmpRequest.TargetValue)
+                .EndStruct();
         }
         targetParam.EndList();
         targetParam.Build();
