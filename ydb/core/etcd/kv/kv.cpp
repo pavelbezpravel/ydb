@@ -15,7 +15,7 @@
 
 #include <ydb/core/etcd/revision/events.h>
 #include <ydb/core/etcd/revision/revision_get.h>
-#include <ydb/core/etcd/revision/revision_inc.h>
+#include <ydb/core/etcd/revision/revision_set.h>
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
@@ -70,6 +70,7 @@ protected:
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
         Revision = ev->Get()->Revision;
+        CompactRevision = ev->Get()->CompactRevision;
 
         RegisterKVRequest(TxControl);
     }
@@ -98,18 +99,23 @@ protected:
             return;
         }
 
-        this->RegisterRevisionIncRequest(TxControl);
+        ++Response.Revision;
+        if constexpr (std::is_same_v<TReq, TCompactionRequest>) {
+            CompactRevision = Request.Revision;
+        }
+
+        this->RegisterRevisionSetRequest(TxControl, Response.Revision, CompactRevision);
     }
 
-    void RegisterRevisionIncRequest(NKikimr::TQueryBase::TTxControl txControl) {
-        this->Become(&TKVActor<TEvReq, TEvResp>::RevisionIncStateFunc);
+    void RegisterRevisionSetRequest(NKikimr::TQueryBase::TTxControl txControl, i64 revision, i64 compactRevision) {
+        this->Become(&TKVActor<TEvReq, TEvResp>::RevisionSetStateFunc);
 
-        this->Register(CreateRevisionIncActor(LogComponent, SessionId, Path, txControl, TxId, Cookie));
+        this->Register(CreateRevisionSetActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, revision, compactRevision));
     }
 
-    STRICT_STFUNC(RevisionIncStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, HandleRevisionInc))
+    STRICT_STFUNC(RevisionSetStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, HandleRevisionSet))
 
-    void HandleRevisionInc(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
+    void HandleRevisionSet(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -118,7 +124,7 @@ protected:
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
         Revision = ev->Get()->Revision;
-        Response.Revision = Revision + 1;
+        CompactRevision = ev->Get()->CompactRevision;
 
         this->Finish();
     }
@@ -141,8 +147,9 @@ protected:
     TString Path;
     NKikimr::TQueryBase::TTxControl TxControl;
 
-    i64 Revision;
     ui64 Cookie;
+    i64 Revision;
+    i64 CompactRevision;
     TReq Request;
     TResp Response;
     bool IsFirstRequest;

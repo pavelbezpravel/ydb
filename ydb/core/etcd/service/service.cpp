@@ -5,8 +5,8 @@
 #include <ydb/core/etcd/kv/kv.h>
 
 #include <ydb/core/etcd/revision/events.h>
+#include <ydb/core/etcd/revision/revision_set.h>
 #include <ydb/core/etcd/revision/revision_table_create.h>
-#include <ydb/core/etcd/revision/revision_table_init.h>
 
 #include <ydb/library/actors/core/actor.h>
 #include <ydb/library/actors/core/actor_bootstrapped.h>
@@ -58,7 +58,7 @@ private:
     }
 
     void Handle(TEvEtcdRevision::TEvCreateTableResponse::TPtr&) {
-        Register(NYdb::NEtcd::CreateRevisionTableInitActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
+        Register(NYdb::NEtcd::CreateRevisionSetActor(NKikimrServices::KQP_PROXY, {}, Path, NKikimr::TQueryBase::TTxControl::BeginAndCommitTx(), {}, Cookie++, 1, 0));
     }
 
     void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr&) {
