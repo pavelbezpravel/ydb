@@ -134,13 +134,13 @@ NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
         if (req.has_request_range()) {
             out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TRangeRequest>(FillRequest(req.request_range())));
         }
-        if (req.has_request_put()) {
+        else if (req.has_request_put()) {
             out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TPutRequest>(FillRequest(req.request_put())));
         }
-        if (req.has_request_delete_range()) {
+        else if (req.has_request_delete_range()) {
             out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TDeleteRangeRequest>(FillRequest(req.request_delete_range())));
         }
-        if (req.has_request_txn()) {
+        else if (req.has_request_txn()) {
             out.Requests.at(SUCCESS).emplace_back(std::make_shared<NYdb::NEtcd::TTxnRequest>(FillRequest(req.request_txn())));
         }
     }
@@ -150,13 +150,13 @@ NYdb::NEtcd::TTxnRequest FillRequest(const etcdserverpb::TxnRequest& request) {
         if (req.has_request_range()) {
             out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TRangeRequest>(FillRequest(req.request_range())));
         }
-        if (req.has_request_put()) {
+        else if (req.has_request_put()) {
             out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TPutRequest>(FillRequest(req.request_put())));
         }
-        if (req.has_request_delete_range()) {
+        else if (req.has_request_delete_range()) {
             out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TDeleteRangeRequest>(FillRequest(req.request_delete_range())));
         }
-        if (req.has_request_txn()) {
+        else if (req.has_request_txn()) {
             out.Requests.at(FAILURE).emplace_back(std::make_shared<NYdb::NEtcd::TTxnRequest>(FillRequest(req.request_txn())));
         }
     }
