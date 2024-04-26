@@ -1,4 +1,5 @@
 #include "service.h"
+#include "utils/check_request.h"
 #include "utils/rpc_converters.h"
 
 #include <ydb/core/etcd/kv/events.h>
@@ -27,30 +28,38 @@ public:
         : TRpcRequestActorBase(request) {}
 
     void Bootstrap() {
-        this->Become(&TEtcdKVRequestRPC::StateFunc);
-
         const auto* req = this->GetProtoRequest();
 
         if (!req) {
-            this->Request->ReplyWithRpcStatus(grpc::StatusCode::INTERNAL, "Internal error");
-            this->PassAway();
+            ReplyError(grpc::StatusCode::INTERNAL, "Internal error");
+            return;
+        }
+
+        if (const auto status = NEtcd::CheckRequest(*req); !status.ok()) {
+            ReplyError(status.error_code(), status.error_message());
             return;
         }
 
         this->Send(NYdb::NEtcd::MakeEtcdServiceId(), new EvRequestType(NEtcd::FillRequest(*req)));
+        this->Become(&TEtcdKVRequestRPC::StateFunc);
     }
 
 private:
     STRICT_STFUNC(StateFunc, hFunc(EvResponseType, Handle))
     void Handle(EvResponseType::TPtr& ev) {
-        if (const auto response = ev->Get()->Response; ev->Get()->Status == Ydb::StatusIds::SUCCESS) {
-            auto out = NEtcd::FillResponse(response);
-            this->Request->Reply(&out, grpc::StatusCode::OK);
+        if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
+            // TODO [pavelbezpravel]: return correct status code and error message.
+            ReplyError(grpc::StatusCode::UNIMPLEMENTED, {});
+            return;
         }
-        else {
-            // TODO [pavelbezpravel]: fill status and error message.
-            this->Request->ReplyWithRpcStatus(grpc::StatusCode::CANCELLED, {});
-        }
+
+        auto out = NEtcd::FillResponse(ev->Get()->Response);
+        this->Request->Reply(&out, grpc::StatusCode::OK);
+        this->PassAway();
+    }
+
+    void ReplyError(grpc::StatusCode code, const TString& error_message) {
+        this->Request->ReplyWithRpcStatus(code, error_message);
         this->PassAway();
     }
 };
