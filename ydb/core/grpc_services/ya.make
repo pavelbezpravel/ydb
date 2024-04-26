@@ -5,6 +5,7 @@ SRCS(
     audit_dml_operations.cpp
     db_metadata_cache.h
 
+    etcd/api/kv/utils/check_request.cpp
     etcd/api/kv/utils/rpc_converters.cpp
     etcd/api/kv/service.cpp
 
