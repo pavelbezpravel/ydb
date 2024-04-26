@@ -19,7 +19,7 @@ public:
         , CommitTx(std::exchange(TxControl.Commit, false))
         , RequestSizes(requestSizes)
         , Request(request) {
-            LOG_E("[TKVTxnCompareActor] TKVTxnCompareActor::TKVTxnCompareActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
+            LOG_E("[TKVTxnCompareActor] TKVTxnCompareActor::TKVTxnCompareActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {

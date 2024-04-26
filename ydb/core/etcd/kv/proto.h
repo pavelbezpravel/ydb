@@ -324,7 +324,7 @@ struct TCompactionResponse {
     i64 Revision;
 
     [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return false;
+        return true;
     }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TCompactionResponse&) {

@@ -45,12 +45,13 @@ public:
 private:
     void RunCompareQuery() {
         Become(&TKVTxnActor::KVTxnCompareStateFunc);
-            
+
         Register(CreateKVTxnCompareActor(LogComponent, SessionId, Path, TxControl, TxId, Cookie, Revision, Request.Compare, std::to_array({Request.Requests[0].size(), Request.Requests[1].size()})));
     }
 
     STRICT_STFUNC(KVTxnCompareStateFunc, hFunc(TEvEtcdKV::TEvTxnCompareResponse, Handle))
     void Handle(TEvEtcdKV::TEvTxnCompareResponse::TPtr& ev) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvTxnCompareResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -126,6 +127,7 @@ private:
         }
 
         TxControl.Commit &= !ev->Get()->Response.IsWrite();
+        ev->Get()->Response.Revision = 0;
 
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
@@ -171,7 +173,8 @@ private:
         Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
     }
 
-    void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
+    void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
         PassAway();
     }

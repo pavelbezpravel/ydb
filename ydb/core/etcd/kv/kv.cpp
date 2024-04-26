@@ -24,19 +24,26 @@ namespace NYdb::NEtcd {
 
 namespace {
 
-void RevisionInc(auto& resp) {
+void RevisionInc(TDeleteRangeResponse& resp) {
+    ++resp.Revision;
+}
+
+void RevisionInc(TPutResponse& resp) {
+    ++resp.Revision;
+}
+
+void RevisionInc(TRangeResponse& resp) {
     ++resp.Revision;
 }
 
 void RevisionInc(TTxnResponse& resp) {
     ++resp.Revision;
     for (auto& response : resp.Responses) {
-        std::visit([](auto& arg) {
+        std::visit([](auto& arg) -> void {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, std::shared_ptr<TTxnRequest>>) {
+            RevisionInc(*arg);
+            if constexpr (std::is_same_v<T, std::shared_ptr<TTxnResponse>>) {
                 arg->Revision = 0;
-            } else {
-                RevisionInc(*arg);
             }
         }, response);
     }
@@ -89,6 +96,18 @@ protected:
         Revision = ev->Get()->Revision;
         CompactRevision = ev->Get()->CompactRevision;
 
+        if constexpr(std::is_same_v<TReq, TRangeRequest> || std::is_same_v<TReq, TCompactionRequest>) {
+            if (Request.Revision != 0 && Request.Revision > Revision) {
+                auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision is a future revision"};
+                Finish(Ydb::StatusIds::PRECONDITION_FAILED, {errMessage});
+                return;
+            } else if (Request.Revision != 0 && Request.Revision < CompactRevision) {
+                auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision has been compacted"};
+                Finish(Ydb::StatusIds::PRECONDITION_FAILED, {errMessage});
+                return;
+            }
+        }
+
         RegisterKVRequest(TxControl);
     }
 
@@ -116,9 +135,10 @@ protected:
             return;
         }
 
-        RevisionInc(Response);
         if constexpr (std::is_same_v<TReq, TCompactionRequest>) {
             CompactRevision = Request.Revision;
+        } else {
+            RevisionInc(Response);
         }
 
         this->RegisterRevisionSetRequest(TxControl, Response.Revision, CompactRevision);
