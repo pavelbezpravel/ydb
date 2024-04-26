@@ -1,5 +1,6 @@
 #include "service.h"
 #include "utils/check_request.h"
+#include "utils/check_response.h"
 #include "utils/rpc_converters.h"
 
 #include <ydb/core/etcd/kv/events.h>
@@ -48,8 +49,8 @@ private:
     STRICT_STFUNC(StateFunc, hFunc(EvResponseType, Handle))
     void Handle(EvResponseType::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-            // TODO [pavelbezpravel]: return correct status code and error message.
-            ReplyError(grpc::StatusCode::UNIMPLEMENTED, {});
+            const auto [errCode, errMessage] = NEtcd::CheckResponse(ev->Get()->Status, ev->Get()->Issues.back().GetMessage());
+            ReplyError(errCode, errMessage);
             return;
         }
 
