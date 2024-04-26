@@ -17,11 +17,10 @@ namespace {
 
 class TKVCompactActor : public TQueryBase {
 public:
-    TKVCompactActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TCompactionRequest&& request, bool isFirstRequest)
+    TKVCompactActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TCompactionRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
-        , Request(request)
-        , IsFirstRequest(isFirstRequest) {
+        , Request(request) {
     }
 
     void OnRunQuery() override {
@@ -50,7 +49,7 @@ public:
 
         Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
 
-        DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
+        DeleteSession = CommitTx && !Response.IsWrite();
 
         if (DeleteSession) {
             CommitTransaction();
@@ -68,13 +67,12 @@ private:
     bool CommitTx;
     TCompactionRequest Request;
     TCompactionResponse Response;
-    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TCompactionRequest request, bool isFirstRequest) {
-    return new TKVCompactActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TCompactionRequest request) {
+    return new TKVCompactActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

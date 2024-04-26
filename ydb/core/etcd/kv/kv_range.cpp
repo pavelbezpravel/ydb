@@ -18,12 +18,11 @@ namespace {
 
 class TKVRangeActor : public TQueryBase {
 public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TRangeRequest&& request, bool isFirstRequest)
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TRangeRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
-        , Request(request)
-        , IsFirstRequest(isFirstRequest) {
-        LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request << " IsFirstRequest: " << IsFirstRequest);
+        , Request(request) {
+        LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
     void OnRunQuery() override {
@@ -161,7 +160,7 @@ public:
             }
         }
 
-        DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
+        DeleteSession = CommitTx && !Response.IsWrite();
 
         if (DeleteSession) {
             CommitTransaction();
@@ -180,13 +179,12 @@ private:
     bool CommitTx;
     TRangeRequest Request;
     TRangeResponse Response;
-    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TRangeRequest request, bool isFirstRequest) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TRangeRequest request) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

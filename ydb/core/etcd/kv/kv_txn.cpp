@@ -19,13 +19,12 @@ namespace {
 
 class TKVTxnActor : public TQueryBase {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request, bool isFirstRequest)
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , RequestIndex(-1)
-        , Request(request)
-        , IsFirstRequest(isFirstRequest) {
-            LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
+        , Request(request) {
+            LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); SelfId: " << SelfId() << ", TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
     void OnRunQuery() override {
@@ -118,6 +117,8 @@ public:
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
         Response.Responses.reserve(Requests.size());
 
+        LOG_E("[TKVTxnActor] TKVTxnActor::OnQueryResult(): SelfId: " << SelfId() << ", Response: " << Response);
+
         RunQuery();
     }
 
@@ -129,6 +130,7 @@ public:
 private:
     STRICT_STFUNC(KVDeleteRangeStateFunc, hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle))
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvDeleteRangeResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -143,6 +145,7 @@ private:
 
     STRICT_STFUNC(KVPutStateFunc, hFunc(TEvEtcdKV::TEvPutResponse, Handle))
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvPutResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -157,6 +160,7 @@ private:
 
     STRICT_STFUNC(KVRangeStateFunc, hFunc(TEvEtcdKV::TEvRangeResponse, Handle))
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvRangeResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -171,6 +175,7 @@ private:
 
     STRICT_STFUNC(KVTxnStateFunc, hFunc(TEvEtcdKV::TEvTxnResponse, Handle))
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
+        LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvTxnResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -187,7 +192,7 @@ private:
         const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
 
         if (++RequestIndex == Requests.size()) {
-            DeleteSession = IsFirstRequest || (CommitTx && !Response.IsWrite());
+            DeleteSession = CommitTx && !Response.IsWrite();
 
             if (DeleteSession) {
                 CommitTransaction();
@@ -219,7 +224,7 @@ private:
             } else {
                 static_assert(sizeof(T) == 0);
             }
-            Register(CreateKVQueryActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, Revision, *arg, std::exchange(IsFirstRequest, false)));
+            Register(CreateKVQueryActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, Revision, *arg));
         }, Requests[RequestIndex]);
     }
 
@@ -228,13 +233,12 @@ private:
     size_t RequestIndex;
     TTxnRequest Request;
     TTxnResponse Response;
-    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TTxnRequest request, bool isFirstRequest) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

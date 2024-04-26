@@ -30,14 +30,13 @@ class TKVActor : public NActors::TActorBootstrapped<TKVActor<TEvReq, TEvResp>> {
     using TResp = decltype(std::declval<TEvResp>().Response);
 
 public:
-    TKVActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie, TReq&& request, bool isFirstRequest)
+    TKVActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie, TReq&& request)
         : LogComponent(logComponent)
         , SessionId(sessionId)
         , Path(path)
         , TxControl(NKikimr::TQueryBase::TTxControl::BeginAndCommitTx())
         , Cookie(cookie)
-        , Request(request)
-        , IsFirstRequest(isFirstRequest) {
+        , Request(request) {
     }
 
     void Bootstrap() {
@@ -78,13 +77,13 @@ protected:
     void RegisterKVRequest(NKikimr::TQueryBase::TTxControl txControl) {
         this->Become(&TKVActor<TEvReq, TEvResp>::KVStateFunc);
 
-        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, Revision, std::move(Request), IsFirstRequest));
+        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, Revision, std::move(Request)));
     }
 
     STRICT_STFUNC(KVStateFunc, hFunc(TEvResp, Handle))
 
     void Handle(TEvResp::TPtr& ev) {
-        LOG_E("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response << " IsFirstRequest: " << IsFirstRequest);
+        LOG_E("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             this->Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
@@ -94,7 +93,7 @@ protected:
         TxId = std::move(ev->Get()->TxId);
         Response = std::move(ev->Get()->Response);
 
-        if (IsFirstRequest || !Response.IsWrite()) {
+        if (!Response.IsWrite()) {
             this->Finish();
             return;
         }
@@ -152,29 +151,28 @@ protected:
     i64 CompactRevision;
     TReq Request;
     TResp Response;
-    bool IsFirstRequest;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TCompactionRequest request, bool isFirstRequest) {
-    return new TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TCompactionRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TDeleteRangeRequest request, bool isFirstRequest) {
-    return new TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TDeleteRangeRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TPutRequest request, bool isFirstRequest) {
-    return new TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TPutRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TRangeRequest request, bool isFirstRequest) {
-    return new TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TRangeRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
-NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request, bool isFirstRequest) {
-    return new TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request), isFirstRequest);
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request) {
+    return new TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

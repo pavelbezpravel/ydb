@@ -95,7 +95,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request), std::exchange(IsFirstRequest, false)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -124,7 +124,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request), std::exchange(IsFirstRequest, false)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -153,7 +153,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request), std::exchange(IsFirstRequest, false)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -182,7 +182,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request), std::exchange(IsFirstRequest, false)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -211,7 +211,7 @@ private:
             }
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request), std::exchange(IsFirstRequest, false)));
+        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev;
     }
 
@@ -243,7 +243,6 @@ private:
     TMap<ui64, TRequests> Requests{};
     ui64 Cookie = 0;
     bool InProgress = false;
-    bool IsFirstRequest = true;
     size_t TablesCreating = 2;
 };
 
