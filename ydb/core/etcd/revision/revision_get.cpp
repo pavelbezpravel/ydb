@@ -23,10 +23,9 @@ public:
 
     void OnRunQuery() override {
         auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("%s");
+            PRAGMA TablePathPrefix("/Root/.etcd");
 
-            SELECT * FROM revision;)",
-            Path.c_str()
+            SELECT * FROM revision;)"
         );
 
         RunDataQuery(query, nullptr, TxControl);
@@ -40,7 +39,7 @@ public:
         Y_ABORT_UNLESS(parser.RowsCount() == 2, "Expected 2 rows in database response");
 
         while (parser.TryNextRow()) {
-            bool id = parser.ColumnParser("id").GetBool();
+            bool id = *parser.ColumnParser("id").GetOptionalBool();
             auto rev = *parser.ColumnParser("revision").GetOptionalInt64();
             if (id) {
                 Revision = rev;

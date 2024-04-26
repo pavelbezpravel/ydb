@@ -31,8 +31,8 @@ public:
             DECLARE $compact_revision AS Int64;
 
             $revision = AsList(
-                AsStruct(FALSE AS id, compact_revision AS revision),
-                AsStruct(TRUE  AS id, revision AS revision),
+                AsStruct(FALSE AS id, $compact_revision AS revision),
+                AsStruct(TRUE  AS id, $revision AS revision),
             );
             UPSERT
                 INTO revision
@@ -61,7 +61,7 @@ public:
         Y_ABORT_UNLESS(parser.RowsCount() == 2, "Expected 2 rows in database response");
 
         while (parser.TryNextRow()) {
-            bool id = parser.ColumnParser("id").GetBool();
+            bool id = *parser.ColumnParser("id").GetOptionalBool();
             auto rev = *parser.ColumnParser("revision").GetOptionalInt64();
             if (id) {
                 Revision = rev;
