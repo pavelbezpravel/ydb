@@ -24,6 +24,24 @@ namespace NYdb::NEtcd {
 
 namespace {
 
+void RevisionInc(auto& resp) {
+    ++resp.Revision;
+}
+
+void RevisionInc(TTxnResponse& resp) {
+    ++resp.Revision;
+    for (auto& response : resp.Responses) {
+        std::visit([](auto& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, std::shared_ptr<TTxnRequest>>) {
+                arg->Revision = 0;
+            } else {
+                RevisionInc(*arg);
+            }
+        }, response);
+    }
+}
+
 template<typename TEvReq, typename TEvResp>
 class TKVActor : public NActors::TActorBootstrapped<TKVActor<TEvReq, TEvResp>> {
     using TReq = decltype(std::declval<TEvReq>().Request);
@@ -98,7 +116,7 @@ protected:
             return;
         }
 
-        ++Response.Revision;
+        RevisionInc(Response);
         if constexpr (std::is_same_v<TReq, TCompactionRequest>) {
             CompactRevision = Request.Revision;
         }
