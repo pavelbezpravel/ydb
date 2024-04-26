@@ -64,7 +64,7 @@ public:
                         NULL AS delete_revision,
                         %s AS value,
                     FROM $next_kv;)",
-            Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key " || key || " is absent"))" : "new_value"
+            Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key '" || key || "' is absent"))" : "new_value"
         );
 
         if (Request.PrevKV) {
@@ -133,7 +133,12 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVPutActor] TKVPutActor::OnFinish(); Response: " << Response);
+        LOG_E("[TKVPutActor] TKVPutActor::OnFinish(); Owner: " << Owner << ", Response: " << Response << ", Issues: \"" << issues.ToString() << "\" Status: " << status);
+        if (status == Ydb::StatusIds::PRECONDITION_FAILED) {
+            auto errMessage = NYql::TIssue{"etcdserver: key not found"};
+            issues.Clear();
+            issues.AddIssues({errMessage});
+        }
         Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
     }
 
