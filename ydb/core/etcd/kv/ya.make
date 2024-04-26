@@ -6,6 +6,7 @@ SRCS(
     kv_put.cpp
     kv_range.cpp
     kv_table_create.cpp
+    kv_txn_compare.cpp
     kv_txn.cpp
     kv.cpp
 )

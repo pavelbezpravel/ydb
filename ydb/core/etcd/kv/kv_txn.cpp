@@ -6,128 +6,66 @@
 #include "kv_delete.h"
 #include "kv_put.h"
 #include "kv_range.h"
-
+#include "kv_txn_compare.h"
 
 #include <utility>
 
-#include <ydb/core/base/path.h>
 #include <ydb/core/etcd/base/query_base.h>
+
+#include <ydb/library/actors/core/actor_bootstrapped.h>
 
 namespace NYdb::NEtcd {
 
 namespace {
 
-class TKVTxnActor : public TQueryBase {
+class TKVTxnActor : public NActors::TActorBootstrapped<TKVTxnActor> {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
-        , CommitTx(std::exchange(TxControl.Commit, false))
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request)
+        : LogComponent(logComponent)
+        , SessionId(sessionId)
+        , TxId(std::move(txId))
+        , Path(path)
+        , TxControl(txControl)
+        , Cookie(cookie)
+        , Revision(revision)
         , RequestIndex(-1)
         , Request(request) {
-            LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); SelfId: " << SelfId() << ", TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
+            LOG_E("[TKVTxnActor] TKVTxnActor::TKVTxnActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
-    void OnRunQuery() override {
-        auto query = Sprintf(R"(
-            PRAGMA TablePathPrefix("/Root/.etcd");
+    void Bootstrap() {
+        RunCompareQuery();
+    }
 
-            DECLARE $target AS List<Struct<
-                key: String,
-                op: String,
-                target_create_revision: Optional<Int64>,
-                target_mod_revision: Optional<Int64>,
-                target_version: Optional<Int64>,
-                target_value: Optional<String>,
-            >>;
+    void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
+        NActors::TActorBootstrapped<TKVTxnActor>::Registered(sys, owner);
+        Owner = owner;
+    }
 
-            $compare = ($op, $lhs, $rhs) -> {
-                RETURN CASE $op
-                    WHEN "Equal"    THEN $lhs == $rhs
-                    WHEN "Greater"  THEN $lhs >  $rhs
-                    WHEN "Less"     THEN $lhs <  $rhs
-                    WHEN "NotEqual" THEN $lhs != $rhs
-                    ELSE false
-                END
-            };
+private:
+    void RunCompareQuery() {
+        Become(&TKVTxnActor::KVTxnCompareStateFunc);
+            
+        Register(CreateKVTxnCompareActor(LogComponent, SessionId, Path, TxControl, TxId, Cookie, Revision, Request.Compare, std::to_array({Request.Requests[0].size(), Request.Requests[1].size()})));
+    }
 
-            SELECT
-                    COALESCE(BOOL_AND(CASE
-                        WHEN target_create_revision IS NOT NULL THEN $compare(op, create_revision, target_create_revision)
-                        WHEN target_mod_revision    IS NOT NULL THEN $compare(op, mod_revision,    target_mod_revision)
-                        WHEN target_version         IS NOT NULL THEN $compare(op, version,         target_version)
-                        WHEN target_value           IS NOT NULL THEN $compare(op, value,           target_value)
-                        ELSE false
-                    END), false) AS result,
-                FROM AS_TABLE($target) AS target_table
-                LEFT JOIN kv           AS source_table USING(key);)"
-        );
-
-        NYdb::TParamsBuilder params;
-
-        auto& targetParam = params.AddParam("$target");
-        targetParam.BeginList();
-        for (const auto& TxnCmpRequest : Request.Compare) {
-            targetParam.AddListItem()
-                .BeginStruct()
-                .AddMember("key")
-                    .String(TxnCmpRequest.Key)
-                .AddMember("op")
-                    .String([&]() {
-                        switch (TxnCmpRequest.Result) {
-                            case TTxnCompareRequest::ECompareResult::EQUAL:
-                                return "Equal";
-                            case TTxnCompareRequest::ECompareResult::GREATER:
-                                return "Greater";
-                            case TTxnCompareRequest::ECompareResult::LESS:
-                                return "Less";
-                            case TTxnCompareRequest::ECompareResult::NOT_EQUAL:
-                                return "NotEqual";
-                            default:
-                                throw std::runtime_error("Unexpected compare type");
-                        }
-                    }())
-                .AddMember("target_create_revision")
-                    .OptionalInt64(TxnCmpRequest.TargetCreateRevision)
-                .AddMember("target_mod_revision")
-                    .OptionalInt64(TxnCmpRequest.TargetModRevision)
-                .AddMember("target_version")
-                    .OptionalInt64(TxnCmpRequest.TargetVersion)
-                .AddMember("target_value")
-                    .OptionalString(TxnCmpRequest.TargetValue)
-                .EndStruct();
+    STRICT_STFUNC(KVTxnCompareStateFunc, hFunc(TEvEtcdKV::TEvTxnCompareResponse, Handle))
+    void Handle(TEvEtcdKV::TEvTxnCompareResponse::TPtr& ev) {
+        if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
+            Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            return;
         }
-        targetParam.EndList();
-        targetParam.Build();
 
-        RunDataQuery(query, &params, TxControl);
-    }
-
-    void OnQueryResult() override {
         Response.Revision = Revision;
-
-        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
-
-        NYdb::TResultSetParser parser(ResultSets[0]);
-
-        Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
-
-        parser.TryNextRow();
-
-        Response.Succeeded = parser.ColumnParser("result").GetBool();
-        const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
+        Response.Succeeded = ev->Get()->Response.Succeeded;
+        const TVector<TRequestOp>& Requests = Request.Requests[!Response.Succeeded];
         Response.Responses.reserve(Requests.size());
 
-        LOG_E("[TKVTxnActor] TKVTxnActor::OnQueryResult(): SelfId: " << SelfId() << ", Response: " << Response);
+        LOG_E("[TKVTxnActor] TKVTxnActor::OnQueryResult(): Response: " << Response);
 
         RunQuery();
     }
 
-    void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
-        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
-    }
-
-private:
     STRICT_STFUNC(KVDeleteRangeStateFunc, hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle))
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
         LOG_E("[TKVTxnActor] TKVTxnActor::Handle(TEvDeleteRangeResponse) RequestIndex: " << RequestIndex << ", Response: " << ev->Get()->Response);
@@ -135,6 +73,8 @@ private:
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
         }
+
+        TxControl.Commit &= !ev->Get()->Response.IsWrite();
 
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
@@ -151,6 +91,8 @@ private:
             return;
         }
 
+        TxControl.Commit &= !ev->Get()->Response.IsWrite();
+
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TPutResponse>(std::move(ev->Get()->Response)));
@@ -165,6 +107,8 @@ private:
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
         }
+
+        TxControl.Commit &= !ev->Get()->Response.IsWrite();
 
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
@@ -181,6 +125,8 @@ private:
             return;
         }
 
+        TxControl.Commit &= !ev->Get()->Response.IsWrite();
+
         SessionId = std::move(ev->Get()->SessionId);
         TxId = std::move(ev->Get()->TxId);
         Response.Responses.emplace_back(std::make_shared<TTxnResponse>(std::move(ev->Get()->Response)));
@@ -189,16 +135,9 @@ private:
     }
 
     void RunQuery() {
-        const TVector<TRequestOp>& Requests = Request.Requests[Response.Succeeded];
+        const TVector<TRequestOp>& Requests = Request.Requests[!Response.Succeeded];
 
         if (++RequestIndex == Requests.size()) {
-            DeleteSession = CommitTx && !Response.IsWrite();
-
-            if (DeleteSession) {
-                CommitTransaction();
-                return;
-            }
-
             Finish();
             return;
         }
@@ -206,7 +145,7 @@ private:
             if (RequestIndex + 1 == Requests.size()) {
                 return TxControl;
             } else {
-                auto [currTxControl, nextTxControl] = Split(TxControl);
+                auto [currTxControl, nextTxControl] = TQueryBase::Split(TxControl);
                 TxControl = nextTxControl;
                 return currTxControl;
             }
@@ -228,8 +167,26 @@ private:
         }, Requests[RequestIndex]);
     }
 
+    void Finish() {
+        Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
+    }
+
+    void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
+        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
+        PassAway();
+    }
+
 private:
-    bool CommitTx;
+    ui64 LogComponent;
+    TString SessionId;
+    TString TxId;
+    NActors::TActorId Owner;
+
+    TString Path;
+    NKikimr::TQueryBase::TTxControl TxControl;
+
+    ui64 Cookie;
+    i64 Revision;
     size_t RequestIndex;
     TTxnRequest Request;
     TTxnResponse Response;

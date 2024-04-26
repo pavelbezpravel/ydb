@@ -242,7 +242,6 @@ struct TTxnCompareRequest {
 };
 
 struct TTxnCompareResponse {
-    i64 Revision;
     bool Succeeded;
 
     friend IOutputStream& operator<<(IOutputStream& str, const TTxnCompareResponse& data) {
