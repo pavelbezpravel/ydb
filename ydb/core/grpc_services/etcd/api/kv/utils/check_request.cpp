@@ -2,6 +2,12 @@
 
 namespace NKikimr::NGRpcService::NEtcd {
 
+// kMaxTxnOps is the max operations per txn.
+// e.g suppose kMmaxTxnOps = 128.
+// Txn.Success can have at most 128 operations,
+// and Txn.Failure can have at most 128 operations.
+static constexpr auto kMaxTxnOps = 128;
+
 grpc::Status CheckRequest(const etcdserverpb::RangeRequest& request) {
     if (request.key().empty()) {
         return {grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: key is not provided"};
@@ -48,7 +54,7 @@ grpc::Status CheckRequest(const etcdserverpb::DeleteRangeRequest& request) {
 
 grpc::Status CheckRequestOp(const etcdserverpb::RequestOp& operation, int maxTxnOps);
 
-grpc::Status CheckRequest(const etcdserverpb::TxnRequest& request, int maxTxnOps) {
+grpc::Status CheckTxnRequest(const etcdserverpb::TxnRequest& request, int maxTxnOps) {
     auto opc = request.compare_size();
     if (opc < request.success_size()) {
         opc = request.success_size();
@@ -80,7 +86,33 @@ grpc::Status CheckRequest(const etcdserverpb::TxnRequest& request, int maxTxnOps
         }
     }
 
-    // TODO [pavelbezpravel]: checkIntervals
+    return {};
+}
+
+// checkIntervals tests whether puts and deletes overlap for a list of ops. If
+// there is an overlap, returns an error. If no overlap, return put and delete
+// sets for recursive evaluation.
+
+// TODO [pavelbezpravel]: change return type.
+grpc::Status CheckIntervals(const google::protobuf::RepeatedPtrField<etcdserverpb::RequestOp>& requests) {
+    Y_UNUSED(requests);
+
+    return {};
+}
+
+grpc::Status CheckRequest(const etcdserverpb::TxnRequest& request) {
+    if (const auto status = CheckTxnRequest(request, kMaxTxnOps); !status.ok()) {
+        return status;
+    }
+
+    // check for forbidden put/del overlaps after checking request to avoid quadratic blowup
+    if (const auto status = CheckIntervals(request.success()); !status.ok()) {
+        return status;
+    }
+
+    if (const auto status = CheckIntervals(request.failure()); !status.ok()) {
+        return status;
+    }
 
     return {};
 }
@@ -101,7 +133,7 @@ grpc::Status CheckRequestOp(const etcdserverpb::RequestOp& operation, int maxTxn
         return CheckRequest(operation.request_delete_range());
     }
     else if (operation.has_request_txn()) {
-        return CheckRequest(operation.request_txn(), maxTxnOps);
+        return CheckTxnRequest(operation.request_txn(), maxTxnOps);
     }
     else {
         return {grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: key not found"};
