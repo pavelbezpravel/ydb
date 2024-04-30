@@ -16,11 +16,9 @@ namespace {
 
 class TKVTableCreateActor : public NActors::TActorBootstrapped<TKVTableCreateActor> {
 public:
-    TKVTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie)
+    TKVTableCreateActor(ui64 logComponent, TString&& path)
         : LogComponent(logComponent)
-        , SessionId(std::move(sessionId))
-        , Path(std::move(path))
-        , Cookie(cookie) {
+        , Path(std::move(path)) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
@@ -37,9 +35,8 @@ public:
 private:
     STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
-    void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr& ev) {
-        Y_UNUSED(ev);
-        Send(Owner, new NYdb::NEtcd::TEvEtcdKV::TEvCreateTableResponse(), {}, Cookie);
+    void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
+        Send(Owner, new TEvEtcdKV::TEvCreateTableResponse());
         PassAway();
     }
 
@@ -74,17 +71,14 @@ private:
 
 private:
     ui64 LogComponent;
-    TString SessionId;
-    NActors::TActorId Owner;
-
     TString Path;
-    ui64 Cookie;
+    NActors::TActorId Owner;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTableCreateActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie) {
-    return new TKVTableCreateActor(logComponent, std::move(sessionId), std::move(path), cookie);
+NActors::IActor* CreateKVTableCreateActor(ui64 logComponent, TString path) {
+    return new TKVTableCreateActor(logComponent, std::move(path));
 }
 
 } // namespace NYdb::NEtcd

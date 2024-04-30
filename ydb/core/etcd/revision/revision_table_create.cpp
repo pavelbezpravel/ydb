@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <ydb/core/etcd/revision/events.h>
+#include <ydb/core/etcd/revision/revision_set.h>
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
@@ -16,11 +17,9 @@ namespace {
 
 class TRevisionTableCreateActor : public NActors::TActorBootstrapped<TRevisionTableCreateActor> {
 public:
-    TRevisionTableCreateActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie)
+    TRevisionTableCreateActor(ui64 logComponent, TString&& path)
         : LogComponent(logComponent)
-        , SessionId(std::move(sessionId))
-        , Path(std::move(path))
-        , Cookie(cookie) {
+        , Path(std::move(path)) {
     }
 
     void Registered(NActors::TActorSystem* sys, const NActors::TActorId& owner) override {
@@ -29,18 +28,14 @@ public:
     }
 
     void Bootstrap() {
-        Become(&TRevisionTableCreateActor::CreateTableStateFunc);
-
         CreateTable();
     }
 
 private:
     STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
-    void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr& ev) {
-        Y_UNUSED(ev);
-        Send(Owner, new NYdb::NEtcd::TEvEtcdRevision::TEvCreateTableResponse(), {}, Cookie);
-        PassAway();
+    void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
+        InitTable();
     }
 
     static NKikimrSchemeOp::TColumnDescription Col(const TString& columnName, const char* columnType) {
@@ -55,6 +50,8 @@ private:
     }
 
     void CreateTable() {
+        Become(&TRevisionTableCreateActor::CreateTableStateFunc);
+
         Register(
             NKikimr::CreateTableCreator(
                 {".etcd", "revision"},
@@ -67,19 +64,29 @@ private:
         );
     }
 
+    STRICT_STFUNC(StateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle))
+
+    void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr& ev) {
+        Send(Owner, new TEvEtcdRevision::TEvCreateTableResponse(ev->Get()->Status, std::move(ev->Get()->Issues), ev->Get()->SessionId));
+        PassAway();
+    }
+
+    void InitTable() {
+        Become(&TRevisionTableCreateActor::StateFunc);
+
+        Register(CreateRevisionSetActor(LogComponent, {}, Path, NKikimr::TQueryBase::TTxControl::BeginAndCommitTx(), {}, 1, 0));
+    }
+
 private:
     ui64 LogComponent;
-    TString SessionId;
-    NActors::TActorId Owner;
-
     TString Path;
-    ui64 Cookie;
+    NActors::TActorId Owner;
 };
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionTableCreateActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie) {
-    return new TRevisionTableCreateActor(logComponent, std::move(sessionId), std::move(path), cookie);
+NActors::IActor* CreateRevisionTableCreateActor(ui64 logComponent, TString path) {
+    return new TRevisionTableCreateActor(logComponent, std::move(path));
 }
 
 } // namespace NYdb::NEtcd

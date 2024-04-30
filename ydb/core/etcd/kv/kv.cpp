@@ -80,7 +80,7 @@ protected:
     void RegisterRevisionGetRequest(NKikimr::TQueryBase::TTxControl txControl) {
         this->Become(&TKVActor<TEvReq, TEvResp>::RevisionGetStateFunc);
 
-        this->Register(CreateRevisionGetActor(LogComponent, SessionId, Path, txControl, TxId, Cookie));
+        this->Register(CreateRevisionGetActor(LogComponent, SessionId, Path, txControl, TxId));
     }
 
     STRICT_STFUNC(RevisionGetStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, HandleRevisionGet))
@@ -96,7 +96,7 @@ protected:
         Revision = ev->Get()->Revision;
         CompactRevision = ev->Get()->CompactRevision;
 
-        if constexpr(std::is_same_v<TReq, TRangeRequest> || std::is_same_v<TReq, TCompactionRequest>) {
+        if constexpr (std::is_same_v<TReq, TRangeRequest> || std::is_same_v<TReq, TCompactionRequest>) {
             if (Request.Revision != 0 && Request.Revision > Revision) {
                 auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision is a future revision"};
                 Finish(Ydb::StatusIds::PRECONDITION_FAILED, {errMessage});
@@ -114,7 +114,7 @@ protected:
     void RegisterKVRequest(NKikimr::TQueryBase::TTxControl txControl) {
         this->Become(&TKVActor<TEvReq, TEvResp>::KVStateFunc);
 
-        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, Revision, std::move(Request)));
+        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Revision, std::move(Request)));
     }
 
     STRICT_STFUNC(KVStateFunc, hFunc(TEvResp, Handle))
@@ -122,7 +122,7 @@ protected:
     void Handle(TEvResp::TPtr& ev) {
         LOG_E("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-            this->Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
+            Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;
         }
 
@@ -131,7 +131,7 @@ protected:
         Response = std::move(ev->Get()->Response);
 
         if (!Response.IsWrite()) {
-            this->Finish();
+            Finish();
             return;
         }
 
@@ -140,14 +140,15 @@ protected:
         } else {
             RevisionInc(Response);
         }
+        Revision = Response.Revision;
 
-        this->RegisterRevisionSetRequest(TxControl, Response.Revision, CompactRevision);
+        RegisterRevisionSetRequest(TxControl, Revision, CompactRevision);
     }
 
     void RegisterRevisionSetRequest(NKikimr::TQueryBase::TTxControl txControl, i64 revision, i64 compactRevision) {
         this->Become(&TKVActor<TEvReq, TEvResp>::RevisionSetStateFunc);
 
-        this->Register(CreateRevisionSetActor(LogComponent, SessionId, Path, txControl, TxId, Cookie, revision, compactRevision));
+        this->Register(CreateRevisionSetActor(LogComponent, SessionId, Path, txControl, TxId, revision, compactRevision));
     }
 
     STRICT_STFUNC(RevisionSetStateFunc, hFunc(TEvEtcdRevision::TEvRevisionResponse, HandleRevisionSet))
@@ -163,11 +164,11 @@ protected:
         Revision = ev->Get()->Revision;
         CompactRevision = ev->Get()->CompactRevision;
 
-        this->Finish();
+        Finish();
     }
 
     void Finish() {
-        this->Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
+        Finish(Ydb::StatusIds::SUCCESS, NYql::TIssues());
     }
 
     void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {
@@ -178,11 +179,10 @@ protected:
 protected:
     ui64 LogComponent;
     TString SessionId;
-    TString TxId;
-    NActors::TActorId Owner;
-
     TString Path;
     NKikimr::TQueryBase::TTxControl TxControl;
+    TString TxId;
+    NActors::TActorId Owner;
 
     ui64 Cookie;
     i64 Revision;

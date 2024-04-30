@@ -20,13 +20,12 @@ namespace {
 
 class TKVTxnActor : public NActors::TActorBootstrapped<TKVTxnActor> {
 public:
-    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TTxnRequest&& request)
+    TKVTxnActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, i64 revision, TTxnRequest&& request)
         : LogComponent(logComponent)
         , SessionId(sessionId)
-        , TxId(std::move(txId))
         , Path(path)
         , TxControl(txControl)
-        , Cookie(cookie)
+        , TxId(std::move(txId))
         , Revision(revision)
         , RequestIndex(-1)
         , Request(request) {
@@ -46,7 +45,7 @@ private:
     void RunCompareQuery() {
         Become(&TKVTxnActor::KVTxnCompareStateFunc);
 
-        Register(CreateKVTxnCompareActor(LogComponent, SessionId, Path, TxControl, TxId, Cookie, Revision, Request.Compare, std::to_array({Request.Requests[0].size(), Request.Requests[1].size()})));
+        Register(CreateKVTxnCompareActor(LogComponent, SessionId, Path, TxControl, TxId, Revision, Request.Compare, std::to_array({Request.Requests[0].size(), Request.Requests[1].size()})));
     }
 
     STRICT_STFUNC(KVTxnCompareStateFunc, hFunc(TEvEtcdKV::TEvTxnCompareResponse, Handle))
@@ -165,7 +164,7 @@ private:
             } else {
                 static_assert(sizeof(T) == 0);
             }
-            Register(CreateKVQueryActor(LogComponent, SessionId, Path, currTxControl, TxId, Cookie, Revision, *arg));
+            Register(CreateKVQueryActor(LogComponent, SessionId, Path, currTxControl, TxId, Revision, *arg));
         }, Requests[RequestIndex]);
     }
 
@@ -175,20 +174,18 @@ private:
 
     void Finish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) {
         LOG_E("[TKVTxnActor] TKVTxnActor::OnFinish(); Response: " << Response);
-        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvTxnResponse(status, std::move(issues), SessionId, TxId, std::move(Response)));
         PassAway();
     }
 
 private:
     ui64 LogComponent;
     TString SessionId;
+    TString Path;
+    NKikimr::TQueryBase::TTxControl TxControl;
     TString TxId;
     NActors::TActorId Owner;
 
-    TString Path;
-    NKikimr::TQueryBase::TTxControl TxControl;
-
-    ui64 Cookie;
     i64 Revision;
     size_t RequestIndex;
     TTxnRequest Request;
@@ -197,8 +194,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TTxnRequest request) {
-    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TTxnRequest request) {
+    return new TKVTxnActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

@@ -4,8 +4,6 @@
 
 #include <utility>
 
-#include <ydb/core/base/path.h>
-
 #include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
@@ -17,10 +15,10 @@ namespace {
 
 class TRevisionSetActor : public TQueryBase {
 public:
-    TRevisionSetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, i64 compactRevision)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+    TRevisionSetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
         , CompactRevision(compactRevision) {
-            LOG_E("[TRevisionSetActor] TRevisionSetActor::TRevisionSetActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
+        LOG_E("[TRevisionSetActor] TRevisionSetActor::TRevisionSetActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {
@@ -61,13 +59,8 @@ public:
         Y_ABORT_UNLESS(parser.RowsCount() == 2, "Expected 2 rows in database response");
 
         while (parser.TryNextRow()) {
-            bool id = *parser.ColumnParser("id").GetOptionalBool();
-            auto rev = *parser.ColumnParser("revision").GetOptionalInt64();
-            if (id) {
-                Revision = rev;
-            } else {
-                CompactRevision = rev;
-            }
+            auto& rev = *parser.ColumnParser("id").GetOptionalBool() ? Revision : CompactRevision;
+            rev = *parser.ColumnParser("revision").GetOptionalInt64();
         }
 
         DeleteSession = TxControl.Commit;
@@ -77,7 +70,7 @@ public:
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
         LOG_E("[TRevisionSetActor] TRevisionSetActor::OnFinish(); Revision: " << Revision);
-        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision), {}, Cookie);
+        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision));
     }
 
 private:
@@ -86,8 +79,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionSetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, i64 compactRevision) {
-    return new TRevisionSetActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, compactRevision);
+NActors::IActor* CreateRevisionSetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision) {
+    return new TRevisionSetActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision);
 }
 
 } // namespace NYdb::NEtcd

@@ -5,6 +5,6 @@
 
 namespace NYdb::NEtcd {
 
-NActors::IActor* CreateRevisionSetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, i64 compactRevision);
+NActors::IActor* CreateRevisionSetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision);
 
 } // namespace NYdb::NEtcd

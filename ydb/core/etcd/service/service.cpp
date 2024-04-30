@@ -5,7 +5,6 @@
 #include <ydb/core/etcd/kv/kv.h>
 
 #include <ydb/core/etcd/revision/events.h>
-#include <ydb/core/etcd/revision/revision_set.h>
 #include <ydb/core/etcd/revision/revision_table_create.h>
 
 #include <ydb/library/actors/core/actor.h>
@@ -23,138 +22,125 @@ namespace NYdb::NEtcd {
 class TEtcdService : public NActors::TActorBootstrapped<TEtcdService> {
 public:
     void Bootstrap() {
-        Become(&TEtcdService::StateProxy);
+        Become(&TEtcdService::CreateTablesStateFunc);
     }
 
 private:
-    STRICT_STFUNC(StateProxy,
+    STRICT_STFUNC(CreateTablesStateFunc,
         hFunc(TEvEtcdRevision::TEvCreateTableResponse, Handle)
-        hFunc(TEvEtcdRevision::TEvRevisionResponse, Handle)
         hFunc(TEvEtcdKV::TEvCreateTableResponse, Handle)
-
-        hFunc(TEvEtcdKV::TEvRangeRequest, Handle)
-        hFunc(TEvEtcdKV::TEvRangeResponse, Handle)
-
-        hFunc(TEvEtcdKV::TEvPutRequest, Handle)
-        hFunc(TEvEtcdKV::TEvPutResponse, Handle)
-
-        hFunc(TEvEtcdKV::TEvDeleteRangeRequest, Handle)
-        hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle)
-
-        hFunc(TEvEtcdKV::TEvTxnRequest, Handle)
-        hFunc(TEvEtcdKV::TEvTxnResponse, Handle)
-
-        hFunc(TEvEtcdKV::TEvCompactionRequest, Handle)
-        hFunc(TEvEtcdKV::TEvCompactionResponse, Handle)
+        hFunc(TEvEtcdKV::TEvCompactionRequest, Store)
+        hFunc(TEvEtcdKV::TEvDeleteRangeRequest, Store)
+        hFunc(TEvEtcdKV::TEvPutRequest, Store)
+        hFunc(TEvEtcdKV::TEvRangeRequest, Store)
+        hFunc(TEvEtcdKV::TEvTxnRequest, Store)
     )
 
     void CreateTables() {
+        if (TablesCreating > 0) {
+            return;
+        }
         CreateRevisionTable();
         CreateKVTable();
     }
 
     void CreateRevisionTable() {
-        Register(NYdb::NEtcd::CreateRevisionTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
+        ++TablesCreating;
+        Register(NYdb::NEtcd::CreateRevisionTableCreateActor(kLogComponent, Path));
     }
 
-    void Handle(TEvEtcdRevision::TEvCreateTableResponse::TPtr&) {
-        Register(NYdb::NEtcd::CreateRevisionSetActor(NKikimrServices::KQP_PROXY, {}, Path, NKikimr::TQueryBase::TTxControl::BeginAndCommitTx(), {}, Cookie++, 1, 0));
-    }
-
-    void Handle(TEvEtcdRevision::TEvRevisionResponse::TPtr&) {
-        ProcessCached();
+    void Handle(TEvEtcdRevision::TEvCreateTableResponse::TPtr& ev) {
+        if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
+            LOG_E("Cannot create EtcdService, Issues: " << ev->Get()->Issues.ToOneLineString());
+            return;
+        }
+        ProcessStored();
     }
 
     void CreateKVTable() {
-        Register(NYdb::NEtcd::CreateKVTableCreateActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie++));
+        ++TablesCreating;
+        Register(NYdb::NEtcd::CreateKVTableCreateActor(kLogComponent, Path));
     }
 
-    void Handle(TEvEtcdKV::TEvCreateTableResponse::TPtr&) {
-        ProcessCached();
+    void Handle(TEvEtcdKV::TEvCreateTableResponse::TPtr& ev) {
+        Y_UNUSED(ev);
+        ProcessStored();
     }
 
-    void ProcessCached() {
+    void ProcessStored() {
         Y_ABORT_UNLESS(TablesCreating > 0);
-        if (--TablesCreating == 0) {
-            for (const auto& [cookie, request] : Requests) {
-                std::visit([&](auto&& arg) {
-                    Send(new NActors::IEventHandle(SelfId(), arg->Sender, arg->Get()));
-                }, request);
-            }
-            // TODO [pavelbezpravel]: We need to clear Requests, I guess, but it works.
-            // Requests.clear();
-        }
-    }
-
-    void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
-        if (TablesCreating != 0) {
-            Requests[Cookie++] = ev;
-            if (!InProgress) {
-                InProgress = true;
-                CreateTables();
-            }
+        if (--TablesCreating > 0) {
             return;
         }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev;
+        Become(&TEtcdService::StateFunc);
+        for (const auto& request : StoredRequests) {
+            std::visit([&](const auto& arg) {
+                Send(new NActors::IEventHandle(SelfId(), arg->Sender, arg->Release().Release()));
+            }, request);
+        }
+        StoredRequests.clear();
     }
 
-    void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
+    void Store(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
+        CreateTables();
+        StoredRequests.emplace_back(ev);
+    }
+
+    void Store(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
+        CreateTables();
+        StoredRequests.emplace_back(ev);
+    }
+
+    void Store(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
+        CreateTables();
+        StoredRequests.emplace_back(ev);
+    }
+
+    void Store(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
+        CreateTables();
+        StoredRequests.emplace_back(ev);
+    }
+
+    void Store(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
+        CreateTables();
+        StoredRequests.emplace_back(ev);
+    }
+
+    STRICT_STFUNC(StateFunc,
+        hFunc(TEvEtcdKV::TEvCompactionRequest, Handle)
+        hFunc(TEvEtcdKV::TEvCompactionResponse, Handle)
+
+        hFunc(TEvEtcdKV::TEvDeleteRangeRequest, Handle)
+        hFunc(TEvEtcdKV::TEvDeleteRangeResponse, Handle)
+
+        hFunc(TEvEtcdKV::TEvPutRequest, Handle)
+        hFunc(TEvEtcdKV::TEvPutResponse, Handle)
+
+        hFunc(TEvEtcdKV::TEvRangeRequest, Handle)
+        hFunc(TEvEtcdKV::TEvRangeResponse, Handle)
+
+        hFunc(TEvEtcdKV::TEvTxnRequest, Handle)
+        hFunc(TEvEtcdKV::TEvTxnResponse, Handle)
+    )
+
+    void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
+        Register(NYdb::NEtcd::CreateKVActor(kLogComponent, {}, Path, Cookie, std::move(ev->Get()->Request)));
+        Requests[Cookie++] = ev->Sender;
+    }
+
+    void Handle(TEvEtcdKV::TEvCompactionResponse::TPtr& ev) {
         auto it = Requests.find(ev->Cookie);
         if (it == Requests.end()) {
-            LOG_E("Request doesn't exist (TEvEtcdKV::TEvRangeResponse).");
+            LOG_E("Request doesn't exist (TEvEtcdKV::TEvCompactionResponse).");
             return;
         }
-        auto requestVariant = it->second;
+        Send(it->second, ev->Release());
         Requests.erase(it);
-        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvRangeRequest::TPtr>(&requestVariant);
-        if (!requestPtr) {
-            LOG_E("Request differs from the TEvEtcdKV::TEvRangeRequest type.");
-            return;
-        }
-        Send(requestPtr->Get()->Sender, ev->Release());
-    }
-
-    void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
-        if (TablesCreating != 0) {
-            Requests[Cookie++] = ev;
-            if (!InProgress) {
-                InProgress = true;
-                CreateTables();
-            }
-            return;
-        }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev;
-    }
-
-    void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
-        auto it = Requests.find(ev->Cookie);
-        if (it == Requests.end()) {
-            LOG_E("Request doesn't exist (TEvEtcdKV::TEvPutResponse).");
-            return;
-        }
-        auto requestVariant = it->second;
-        Requests.erase(it);
-        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvPutRequest::TPtr>(&requestVariant);
-        if (!requestPtr) {
-            LOG_E("Request differs from the TEvEtcdKV::TEvPutRequest type.");
-            return;
-        }
-        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
-        if (TablesCreating != 0) {
-            Requests[Cookie++] = ev;
-            if (!InProgress) {
-                InProgress = true;
-                CreateTables();
-            }
-            return;
-        }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev;
+        Register(NYdb::NEtcd::CreateKVActor(kLogComponent, {}, Path, Cookie, std::move(ev->Get()->Request)));
+        Requests[Cookie++] = ev->Sender;
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
@@ -163,27 +149,43 @@ private:
             LOG_E("Request doesn't exist (TEvEtcdKV::TEvDeleteRangeResponse).");
             return;
         }
-        auto requestVariant = it->second;
+        Send(it->second, ev->Release());
         Requests.erase(it);
-        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvDeleteRangeRequest::TPtr>(&requestVariant);
-        if (!requestPtr) {
-            LOG_E("Request differs from the TEvEtcdKV::TEvDeleteRangeRequest type.");
+    }
+
+    void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
+        Register(NYdb::NEtcd::CreateKVActor(kLogComponent, {}, Path, Cookie, std::move(ev->Get()->Request)));
+        Requests[Cookie++] = ev->Sender;
+    }
+
+    void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            LOG_E("Request doesn't exist (TEvEtcdKV::TEvPutResponse).");
             return;
         }
-        Send(requestPtr->Get()->Sender, ev->Release());
+        Send(it->second, ev->Release());
+        Requests.erase(it);
+    }
+
+    void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
+        Register(NYdb::NEtcd::CreateKVActor(kLogComponent, {}, Path, Cookie, std::move(ev->Get()->Request)));
+        Requests[Cookie++] = ev->Sender;
+    }
+
+    void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
+        auto it = Requests.find(ev->Cookie);
+        if (it == Requests.end()) {
+            LOG_E("Request doesn't exist (TEvEtcdKV::TEvRangeResponse).");
+            return;
+        }
+        Send(it->second, ev->Release());
+        Requests.erase(it);
     }
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
-        if (TablesCreating != 0) {
-            Requests[Cookie++] = ev;
-            if (!InProgress) {
-                InProgress = true;
-                CreateTables();
-            }
-            return;
-        }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev;
+        Register(NYdb::NEtcd::CreateKVActor(kLogComponent, {}, Path, Cookie, std::move(ev->Get()->Request)));
+        Requests[Cookie++] = ev->Sender;
     }
 
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
@@ -192,58 +194,24 @@ private:
             LOG_E("Request doesn't exist (TEvEtcdKV::TEvTxnResponse).");
             return;
         }
-        auto requestVariant = it->second;
+        Send(it->second, ev->Release());
         Requests.erase(it);
-        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvTxnRequest::TPtr>(&requestVariant);
-        if (!requestPtr) {
-            LOG_E("Request differs from the TEvEtcdKV::TEvTxnRequest type.");
-            return;
-        }
-        Send(requestPtr->Get()->Sender, ev->Release());
-    }
-
-    void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
-        if (TablesCreating != 0) {
-            Requests[Cookie++] = ev;
-            if (!InProgress) {
-                InProgress = true;
-                CreateTables();
-            }
-            return;
-        }
-        Register(NYdb::NEtcd::CreateKVActor(NKikimrServices::KQP_PROXY, {}, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev;
-    }
-
-    void Handle(TEvEtcdKV::TEvCompactionResponse::TPtr& ev) {
-       auto it = Requests.find(ev->Cookie);
-        if (it == Requests.end()) {
-            LOG_E("Request doesn't exist (TEvEtcdKV::TEvCompactionResponse).");
-            return;
-        }
-        auto requestVariant = it->second;
-        Requests.erase(it);
-        const auto* requestPtr = std::get_if<TEvEtcdKV::TEvCompactionRequest::TPtr>(&requestVariant);
-        if (!requestPtr) {
-            LOG_E("Request differs from the TEvEtcdKV::TEvCompactionRequest type.");
-            return;
-        }
-        Send(requestPtr->Get()->Sender, ev->Release());
     }
 
 private:
-    using TRequests = std::variant<
+    using TRequestPtr = std::variant<
         TEvEtcdKV::TEvRangeRequest::TPtr,
         TEvEtcdKV::TEvPutRequest::TPtr,
         TEvEtcdKV::TEvDeleteRangeRequest::TPtr,
         TEvEtcdKV::TEvTxnRequest::TPtr,
         TEvEtcdKV::TEvCompactionRequest::TPtr>;
 
+    static constexpr auto kLogComponent = NKikimrServices::KQP_PROXY;
     const TString Path = "/Root/.etcd";
-    TMap<ui64, TRequests> Requests{};
+    ssize_t TablesCreating = 0;
+    TVector<TRequestPtr> StoredRequests;
     ui64 Cookie = 0;
-    bool InProgress = false;
-    size_t TablesCreating = 2;
+    TMap<ui64, NActors::TActorId> Requests;
 };
 
 NActors::IActor* CreateEtcdService() {

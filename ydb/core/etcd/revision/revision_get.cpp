@@ -4,8 +4,6 @@
 
 #include <utility>
 
-#include <ydb/core/base/path.h>
-
 #include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
@@ -17,8 +15,8 @@ namespace {
 
 class TRevisionGetActor : public TQueryBase {
 public:
-    TRevisionGetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, ui64 cookie)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, {}) {
+    TRevisionGetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), {}) {
     }
 
     void OnRunQuery() override {
@@ -39,13 +37,8 @@ public:
         Y_ABORT_UNLESS(parser.RowsCount() == 2, "Expected 2 rows in database response");
 
         while (parser.TryNextRow()) {
-            bool id = *parser.ColumnParser("id").GetOptionalBool();
-            auto rev = *parser.ColumnParser("revision").GetOptionalInt64();
-            if (id) {
-                Revision = rev;
-            } else {
-                CompactRevision = rev;
-            }
+            auto& rev = *parser.ColumnParser("id").GetOptionalBool() ? Revision : CompactRevision;
+            rev = *parser.ColumnParser("revision").GetOptionalInt64();
         }
 
         DeleteSession = TxControl.Commit;
@@ -54,7 +47,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision), {}, Cookie);
+        Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision));
     }
 
 private:
@@ -63,8 +56,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateRevisionGetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie) {
-    return new TRevisionGetActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie);
+NActors::IActor* CreateRevisionGetActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId) {
+    return new TRevisionGetActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId));
 }
 
 } // namespace NYdb::NEtcd

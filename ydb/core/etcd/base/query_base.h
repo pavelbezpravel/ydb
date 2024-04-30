@@ -11,11 +11,9 @@ namespace NYdb::NEtcd {
 
 class TQueryBase : public NKikimr::TQueryBase {
 public:
-    TQueryBase(ui64 logComponent, TString&& sessionId, TString database, TString path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision)
+    TQueryBase(ui64 logComponent, TString&& sessionId, TString&& database, TTxControl txControl, TString&& txId, i64 revision)
         : NKikimr::TQueryBase(logComponent, sessionId, database)
-        , Path(path)
         , TxControl(txControl)
-        , Cookie(cookie)
         , Revision(revision) {
         TxId = std::move(txId);
     }
@@ -63,10 +61,7 @@ protected:
     static constexpr TStringBuf kEmptyKey{"\0", 1};
     static_assert(kEmptyKey.size() == 1);
 
-    TString Path;
     TTxControl TxControl;
-
-    ui64 Cookie;
     i64 Revision;
 };
 

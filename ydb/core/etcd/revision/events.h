@@ -25,7 +25,17 @@ struct TEvEtcdRevision {
 
     // Events
 
-    struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {};
+    struct TEvCreateTableResponse : public NActors::TEventLocal<TEvCreateTableResponse, EvCreateTableResponse> {
+        TEvCreateTableResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString sessionId)
+            : Status(status)
+            , Issues(issues)
+            , SessionId(std::move(sessionId)) {
+        }
+
+        Ydb::StatusIds::StatusCode Status;
+        NYql::TIssues Issues;
+        TString SessionId;
+    };
 
     struct TEvRevisionResponse : public NActors::TEventLocal<TEvRevisionResponse, EvRevisionResponse> {
         TEvRevisionResponse(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues, TString sessionId, TString txId, i64 revision, i64 compactRevision)

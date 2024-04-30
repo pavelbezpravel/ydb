@@ -5,7 +5,6 @@
 
 #include <utility>
 
-#include <ydb/core/base/path.h>
 #include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
@@ -17,11 +16,11 @@ namespace {
 
 class TKVPutActor : public TQueryBase {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, ui64 cookie, i64 revision, TPutRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, TPutRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
-            LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
+        LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
 
     void OnRunQuery() override {
@@ -138,7 +137,7 @@ public:
             issues.Clear();
             issues.AddIssues({errMessage});
         }
-        Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvPutResponse(status, std::move(issues), SessionId, TxId, std::move(Response)));
     }
 
 private:
@@ -149,8 +148,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

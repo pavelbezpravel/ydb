@@ -5,7 +5,6 @@
 
 #include <utility>
 
-#include <ydb/core/base/path.h>
 #include <ydb/core/etcd/base/query_base.h>
 
 #include <ydb/public/sdk/cpp/client/ydb_params/params.h>
@@ -17,11 +16,11 @@ namespace {
 
 class TKVDeleteActor : public TQueryBase {
 public:
-    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, uint64_t cookie, i64 revision, TDeleteRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), path, path, txControl, std::move(txId), cookie, revision)
+    TKVDeleteActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, TDeleteRangeRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
-            LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
+        LOG_E("[TKVDeleteActor] TKVDeleteActor::TKVDeleteActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
 
     void OnRunQuery() override {
@@ -116,7 +115,7 @@ public:
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
         LOG_E("[TKVDeleteActor] TKVDeleteActor::OnFinish(); Response: " << Response);
-        Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)), {}, Cookie);
+        Send(Owner, new TEvEtcdKV::TEvDeleteRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)));
     }
 
 private:
@@ -127,8 +126,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, ui64 cookie, i64 revision, TDeleteRangeRequest request) {
-    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), cookie, revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TDeleteRangeRequest request) {
+    return new TKVDeleteActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd
