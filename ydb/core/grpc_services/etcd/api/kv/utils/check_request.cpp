@@ -8,6 +8,22 @@ namespace NKikimr::NGRpcService::NEtcd {
 // and Txn.Failure can have at most 128 operations.
 static constexpr auto kMaxTxnOps = 128;
 
+static constexpr TStringBuf kEmptyKey{"\0", 1};
+static_assert(kEmptyKey.size() == 1);
+
+[[nodiscard]] static inline TString GetPrefix(TString key) noexcept {
+    while (!key.empty()) {
+        if (static_cast<unsigned char>(key.back()) < std::numeric_limits<unsigned char>::max()) {
+            char key_back = key.back();
+            ++key_back;
+            key.back() = key_back;
+            return key;
+        }
+        key.pop_back();
+    }
+    return TString{kEmptyKey};
+}
+
 grpc::Status CheckRequest(const etcdserverpb::RangeRequest& request) {
     if (request.key().empty()) {
         return {grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: key is not provided"};
@@ -92,12 +108,123 @@ grpc::Status CheckTxnRequest(const etcdserverpb::TxnRequest& request, int maxTxn
 // checkIntervals tests whether puts and deletes overlap for a list of ops. If
 // there is an overlap, returns an error. If no overlap, return put and delete
 // sets for recursive evaluation.
+std::tuple<
+    grpc::Status,
+    std::vector<std::pair<std::string, std::string>>,
+    std::vector<std::pair<std::string, std::string>>,
+    std::vector<std::pair<std::string, std::string>>,
+    std::vector<std::pair<std::string, std::string>>,
+    std::unordered_set<std::string>
+> CheckIntervals(const google::protobuf::RepeatedPtrField<etcdserverpb::RequestOp>& requests) {
+    std::vector<std::pair<std::string, std::string>> keyDels;
+    std::vector<std::pair<std::string, std::string>> fromKeyDels;
+    std::vector<std::pair<std::string, std::string>> prefixKeyDels;
+    std::vector<std::pair<std::string, std::string>> rangeDels;
+    std::unordered_set<std::string> puts;
 
-// TODO [pavelbezpravel]: change return type.
-grpc::Status CheckIntervals(const google::protobuf::RepeatedPtrField<etcdserverpb::RequestOp>& requests) {
-    Y_UNUSED(requests);
+    auto compareKey = [](const std::string& putKey, const std::string& key, const std::string&) {
+        return putKey == key;
+    };
+    auto compareFromKey = [](const std::string& putKey, const std::string& key, const std::string&) {
+        return putKey >= key;
+    };
+    auto comparePrefixKey = [](const std::string& putKey, const std::string& key, const std::string&) {
+        return putKey.starts_with(key);
+    };
+    auto compareRange = [](const std::string& putKey, const std::string& key, const std::string& rangeEnd) {
+        return key <= putKey && putKey < rangeEnd;
+    };
 
-    return {};
+    auto isRepeatedPut = [&](const std::string& putKey) {
+        return puts.contains(putKey) || std::ranges::any_of(keyDels, [&](const std::pair<std::string, std::string>& range) {
+            return compareKey(putKey, range.first, range.second);
+        }) || std::ranges::any_of(fromKeyDels, [&](const std::pair<std::string, std::string>& range) {
+            return compareFromKey(putKey, range.first, range.second);
+        }) || std::ranges::any_of(prefixKeyDels, [&](const std::pair<std::string, std::string>& range) {
+            return comparePrefixKey(putKey, range.first, range.second);
+        }) || std::ranges::any_of(rangeDels, [&](const std::pair<std::string, std::string>& range) {
+            return compareRange(putKey, range.first, range.second);
+        });
+    };
+
+    for (const auto& req : requests) {
+        if (req.has_request_delete_range()) {
+            const auto& request = req.request_delete_range();
+            if (request.range_end().empty()) {
+                if (std::any_of(puts.begin(), puts.end(), [&](const std::string& putKey) {
+                    return compareKey(putKey, request.key(), request.range_end());
+                })) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+                keyDels.emplace_back(request.key(), request.range_end());
+            } else if (request.range_end() == kEmptyKey) {
+                if (std::any_of(puts.begin(), puts.end(), [&](const std::string& putKey) {
+                    return compareFromKey(putKey, request.key(), request.range_end());
+                })) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+                fromKeyDels.emplace_back(request.key(), request.range_end());
+            } else if (request.range_end() == GetPrefix(request.key())) {
+                if (std::any_of(puts.begin(), puts.end(), [&](const std::string& putKey) {
+                    return comparePrefixKey(putKey, request.key(), request.range_end());
+                })) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+                prefixKeyDels.emplace_back(request.key(), request.range_end());
+            } else {
+                if (std::any_of(puts.begin(), puts.end(), [&](const std::string& putKey) {
+                    return compareRange(putKey, request.key(), request.range_end());
+                })) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+                rangeDels.emplace_back(request.key(), request.range_end());
+            }
+        } else if (req.has_request_put()) {
+            const auto& request = req.request_put();
+            if (isRepeatedPut(request.key())) {
+                return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+            }
+            puts.insert(request.key());
+        } else if (req.has_request_txn()) {
+            const auto& request = req.request_txn();
+            auto [statusThen, keyDelsThen, fromKeyDelsThen, prefixKeyDelsThen, delsThen, putsThen] = CheckIntervals(request.success());
+            if (!statusThen.ok()) {
+                return {statusThen, keyDelsThen, fromKeyDelsThen, prefixKeyDelsThen, delsThen, putsThen};
+            }
+            for (const auto& putKey : putsThen) {
+                if (isRepeatedPut(putKey)) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+            }
+
+            auto [statusElse, keyDelsElse, fromKeyDelsElse, prefixKeyDelsElse, delsElse, putsElse] = CheckIntervals(request.failure());
+            if (!statusElse.ok()) {
+                return {statusElse, keyDelsElse, fromKeyDelsElse, prefixKeyDelsElse, delsElse, putsElse};
+            }
+            for (const auto& putKey : putsElse) {
+                if (isRepeatedPut(putKey)) {
+                    return {{grpc::StatusCode::INVALID_ARGUMENT, "etcdserver: duplicate key given in txn request"}, {}, {}, {}, {}, {}};
+                }
+            }
+
+            keyDels.insert(keyDels.end(), keyDelsThen.begin(), keyDelsThen.end());
+            keyDels.insert(keyDels.end(), keyDelsElse.begin(), keyDelsElse.end());
+
+            fromKeyDels.insert(fromKeyDels.end(), fromKeyDelsThen.begin(), fromKeyDelsThen.end());
+            fromKeyDels.insert(fromKeyDels.end(), fromKeyDelsElse.begin(), fromKeyDelsElse.end());
+
+            prefixKeyDels.insert(prefixKeyDels.end(), prefixKeyDelsThen.begin(), prefixKeyDelsThen.end());
+            prefixKeyDels.insert(prefixKeyDels.end(), prefixKeyDelsElse.begin(), prefixKeyDelsElse.end());
+
+            rangeDels.insert(rangeDels.end(), delsThen.begin(), delsThen.end());
+            rangeDels.insert(rangeDels.end(), delsElse.begin(), delsElse.end());
+
+            puts.insert(putsThen.begin(), putsThen.end());
+            puts.insert(putsElse.begin(), putsElse.end());
+        }
+    }
+
+    return {{}, keyDels, fromKeyDels, prefixKeyDels, rangeDels, puts};
 }
 
 grpc::Status CheckRequest(const etcdserverpb::TxnRequest& request) {
@@ -106,11 +233,11 @@ grpc::Status CheckRequest(const etcdserverpb::TxnRequest& request) {
     }
 
     // check for forbidden put/del overlaps after checking request to avoid quadratic blowup
-    if (const auto status = CheckIntervals(request.success()); !status.ok()) {
+    if (const auto [status, keyDels, fromKeyDels, prefixKeyDels, rangeDels, puts] = CheckIntervals(request.success()); !status.ok()) {
         return status;
     }
 
-    if (const auto status = CheckIntervals(request.failure()); !status.ok()) {
+    if (const auto [status, keyDels, fromKeyDels, prefixKeyDels, rangeDels, puts] = CheckIntervals(request.failure()); !status.ok()) {
         return status;
     }
 

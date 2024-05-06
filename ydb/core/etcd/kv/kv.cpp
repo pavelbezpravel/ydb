@@ -19,6 +19,7 @@
 
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
+#include <ydb/library/query_actor/query_actor.h>
 
 namespace NYdb::NEtcd {
 
@@ -55,7 +56,7 @@ class TKVActor : public NActors::TActorBootstrapped<TKVActor<TEvReq, TEvResp>> {
     using TResp = decltype(std::declval<TEvResp>().Response);
 
 public:
-    TKVActor(ui64 logComponent, TString&& sessionId, TString&& path, ui64 cookie, TReq&& request)
+    TKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TReq request)
         : LogComponent(logComponent)
         , SessionId(sessionId)
         , Path(path)
@@ -182,23 +183,63 @@ protected:
 } // anonymous namespace
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TCompactionRequest request) {
-    return new TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+    using TRetryActor = NKikimr::TQueryRetryActor<TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>, TEvEtcdKV::TEvCompactionResponse, ui64, TString, TString, ui64, TCompactionRequest>;
+    
+    return new TRetryActor(
+        NActors::TActivationContext::AsActorContext().SelfID,
+        TRetryActor::IRetryPolicy::GetExponentialBackoffPolicy(TRetryActor::Retryable, TDuration::MilliSeconds(10), TDuration::MilliSeconds(200), TDuration::Seconds(1), std::numeric_limits<size_t>::max(), TDuration::Minutes(5)),
+        logComponent, std::move(sessionId), std::move(path), cookie, std::move(request)
+    );
+    
+    // return new TKVActor<TEvEtcdKV::TEvCompactionRequest, TEvEtcdKV::TEvCompactionResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TDeleteRangeRequest request) {
-    return new TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+    using TRetryActor = NKikimr::TQueryRetryActor<TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>, TEvEtcdKV::TEvDeleteRangeResponse, ui64, TString, TString, ui64, TDeleteRangeRequest>;
+    
+    return new TRetryActor(
+        NActors::TActivationContext::AsActorContext().SelfID,
+        TRetryActor::IRetryPolicy::GetExponentialBackoffPolicy(TRetryActor::Retryable, TDuration::MilliSeconds(10), TDuration::MilliSeconds(200), TDuration::Seconds(1), std::numeric_limits<size_t>::max(), TDuration::Minutes(5)),
+        logComponent, std::move(sessionId), std::move(path), cookie, std::move(request)
+    );
+    
+    // return new TKVActor<TEvEtcdKV::TEvDeleteRangeRequest, TEvEtcdKV::TEvDeleteRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TPutRequest request) {
-    return new TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+    using TRetryActor = NKikimr::TQueryRetryActor<TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>, TEvEtcdKV::TEvPutResponse, ui64, TString, TString, ui64, TPutRequest>;
+    
+    return new TRetryActor(
+        NActors::TActivationContext::AsActorContext().SelfID,
+        TRetryActor::IRetryPolicy::GetExponentialBackoffPolicy(TRetryActor::Retryable, TDuration::MilliSeconds(10), TDuration::MilliSeconds(200), TDuration::Seconds(1), std::numeric_limits<size_t>::max(), TDuration::Minutes(5)),
+        logComponent, std::move(sessionId), std::move(path), cookie, std::move(request)
+    );
+    
+    // return new TKVActor<TEvEtcdKV::TEvPutRequest, TEvEtcdKV::TEvPutResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TRangeRequest request) {
-    return new TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+    using TRetryActor = NKikimr::TQueryRetryActor<TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>, TEvEtcdKV::TEvRangeResponse, ui64, TString, TString, ui64, TRangeRequest>;
+    
+    return new TRetryActor(
+        NActors::TActivationContext::AsActorContext().SelfID,
+        TRetryActor::IRetryPolicy::GetExponentialBackoffPolicy(TRetryActor::Retryable, TDuration::MilliSeconds(10), TDuration::MilliSeconds(200), TDuration::Seconds(1), std::numeric_limits<size_t>::max(), TDuration::Minutes(5)),
+        logComponent, std::move(sessionId), std::move(path), cookie, std::move(request)
+    );
+    
+    // return new TKVActor<TEvEtcdKV::TEvRangeRequest, TEvEtcdKV::TEvRangeResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request) {
-    return new TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
+    using TRetryActor = NKikimr::TQueryRetryActor<TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>, TEvEtcdKV::TEvTxnResponse, ui64, TString, TString, ui64, TTxnRequest>;
+    
+    return new TRetryActor(
+        NActors::TActivationContext::AsActorContext().SelfID,
+        TRetryActor::IRetryPolicy::GetExponentialBackoffPolicy(TRetryActor::Retryable, TDuration::MilliSeconds(10), TDuration::MilliSeconds(200), TDuration::Seconds(1), std::numeric_limits<size_t>::max(), TDuration::Minutes(5)),
+        logComponent, std::move(sessionId), std::move(path), cookie, std::move(request)
+    );
+    
+    // return new TKVActor<TEvEtcdKV::TEvTxnRequest, TEvEtcdKV::TEvTxnResponse>(logComponent, std::move(sessionId), std::move(path), cookie, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

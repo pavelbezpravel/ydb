@@ -17,7 +17,7 @@ std::pair<grpc::StatusCode, TString> CheckResponse(Ydb::StatusIds::StatusCode st
         return {grpc::StatusCode::OUT_OF_RANGE, "etcdserver: mvcc: required revision has been compacted"};
     }
 
-    return {grpc::StatusCode::UNIMPLEMENTED, ""};
+    return {grpc::StatusCode::UNIMPLEMENTED, message};
 }
 
 } // namespace NKikimr::NGRpcService::NEtcd

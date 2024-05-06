@@ -49,7 +49,7 @@ private:
     STRICT_STFUNC(StateFunc, hFunc(EvResponseType, Handle))
     void Handle(EvResponseType::TPtr& ev) {
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-            const auto [errCode, errMessage] = NEtcd::CheckResponse(ev->Get()->Status, ev->Get()->Issues.back().GetMessage());
+            const auto [errCode, errMessage] = NEtcd::CheckResponse(ev->Get()->Status, ev->Get()->Issues ? ev->Get()->Issues.back().GetMessage() : TString{});
             ReplyError(errCode, errMessage);
             return;
         }
