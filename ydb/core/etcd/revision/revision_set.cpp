@@ -62,7 +62,7 @@ public:
             rev = *parser.ColumnParser("revision").GetOptionalInt64();
         }
 
-        DeleteSession = TxControl.Commit;
+        DeleteSession = false;
 
         Finish();
     }

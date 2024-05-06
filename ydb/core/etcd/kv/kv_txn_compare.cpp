@@ -13,8 +13,8 @@ namespace {
 
 class TKVTxnCompareActor : public TQueryBase {
 public:
-    TKVTxnCompareActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, TVector<TTxnCompareRequest>&& request, std::array<size_t, 2> requestSizes)
-        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
+    TKVTxnCompareActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision, TVector<TTxnCompareRequest>&& request, std::array<size_t, 2> requestSizes)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , RequestSizes(requestSizes)
         , Request(request) {
@@ -113,9 +113,9 @@ public:
 
         Response.Succeeded = parser.ColumnParser("result").GetOptionalBool().GetOrElse(false);
 
-        DeleteSession = CommitTx && RequestSizes[!Response.Succeeded] == 0;
+        DeleteSession = false;
 
-        if (DeleteSession) {
+        if (CommitTx && RequestSizes[!Response.Succeeded] == 0) {
             CommitTransaction();
             return;
         }

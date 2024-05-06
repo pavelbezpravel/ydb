@@ -103,9 +103,9 @@ public:
             Response.Deleted = parser.ColumnParser("result").GetUint64();
         }
 
-        DeleteSession = CommitTx && !Response.IsWrite();
+        DeleteSession = false;
 
-        if (DeleteSession) {
+        if (CommitTx && !Response.IsWrite()) {
             CommitTransaction();
             return;
         }

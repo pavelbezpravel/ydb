@@ -18,7 +18,6 @@ class TKVPutActor : public TQueryBase {
 public:
     TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision, TPutRequest&& request)
         : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision)
-        , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
         TxControl.Commit = false;
         LOG_D("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
@@ -121,12 +120,9 @@ public:
             Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
         }
 
-        DeleteSession = CommitTx && !Response.IsWrite();
+        DeleteSession = false;
 
-        if (DeleteSession) {
-            CommitTransaction();
-            return;
-        }
+        Y_ABORT_UNLESS(Response.IsWrite());
 
         Finish();
     }
@@ -142,7 +138,6 @@ public:
     }
 
 private:
-    bool CommitTx;
     TPutRequest Request;
     TPutResponse Response;
 };
