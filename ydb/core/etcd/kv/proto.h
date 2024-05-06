@@ -64,6 +64,10 @@ struct TRangeRequest {
     i64 MinCreateRevision;
     i64 MaxCreateRevision;
 
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
+
     friend IOutputStream& operator<<(IOutputStream& str, const TRangeRequest& data) {
         str << "[TRangeRequest] { "
             << "Key: \"" << data.Key << "\", "
@@ -110,27 +114,28 @@ struct TRangeResponse {
 };
 
 struct TPutRequest {
-    TVector<std::pair<TString, TString>> KVs;
+    TString Key;
+    TString Value;
     bool PrevKV;
     bool IgnoreValue;
 
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+
     friend IOutputStream& operator<<(IOutputStream& str, const TPutRequest& data) {
         str << "[TPutRequest] { "
+            << "Key: \"" << data.Key << "\", "
+            << "Value: \"" << data.Value << "\", "
             << "PrevKV: " << data.PrevKV << ", "
-            << "IgnoreValue: " << data.IgnoreValue << ", "
-            << "KVs: { ";
-        
-        for (const auto& [key, value] : data.KVs) {
-            str << "key: \"" << key << "\", value: \"" << value << "\", ";
-        }
-        str << " } }";
+            << "IgnoreValue: " << data.IgnoreValue << "}";
         return str;
     }
 };
 
 struct TPutResponse {
     i64 Revision;
-    TVector<TKeyValue> PrevKVs;
+    TMaybe<TKeyValue> PrevKV;
 
     [[nodiscard]] constexpr bool IsWrite() const noexcept {
         return true;
@@ -138,10 +143,10 @@ struct TPutResponse {
 
     friend IOutputStream& operator<<(IOutputStream& str, const TPutResponse& data) {
         str << "[TPutResponse] { "
-            << "PrevKVs: {";
+            << "PrevKV: {";
 
-        for (const auto& kv : data.PrevKVs) {
-            str << kv << ", ";
+        if (data.PrevKV) {
+            str << data.PrevKV;
         }
 
         str << " } }";
@@ -153,6 +158,10 @@ struct TDeleteRangeRequest {
     TString Key;
     TString RangeEnd;
     bool PrevKV;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
     
     friend IOutputStream& operator<<(IOutputStream& str, const TDeleteRangeRequest& data) {
         str << "[TDeleteRangeRequest] { "
@@ -256,6 +265,14 @@ struct TTxnRequest {
     TVector<TTxnCompareRequest> Compare;
     std::array<TVector<TRequestOp>, 2> Requests;
 
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return std::ranges::any_of(Requests, [](const TVector<TRequestOp>& requests) {
+            return std::ranges::any_of(requests, [](const TRequestOp& request) {
+                return std::visit([](const auto& r) { return r->IsWrite(); }, request);
+            });
+        });
+    }
+
     friend IOutputStream& operator<<(IOutputStream& str, const TTxnRequest& data) {
         str << "[TTxnRequest] { "
             << "Compare: { ";
@@ -286,8 +303,8 @@ struct TTxnResponse {
     TVector<TResponseOp> Responses;
 
     [[nodiscard]] constexpr bool IsWrite() const noexcept {
-        return std::any_of(Responses.begin(), Responses.end(), [](const TResponseOp& resp) {
-            return std::visit([](const auto& r) { return r->IsWrite(); }, resp);
+        return std::ranges::any_of(Responses, [](const TResponseOp& response) {
+            return std::visit([](const auto& r) { return r->IsWrite(); }, response);
         });
     }
 
@@ -310,6 +327,10 @@ struct TTxnResponse {
 struct TCompactionRequest {
     i64 Revision;
     bool Physical;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
 
     friend IOutputStream& operator<<(IOutputStream& str, const TCompactionRequest& data) {
         str << "[TCompactionRequest] { "

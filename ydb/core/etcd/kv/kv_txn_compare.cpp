@@ -56,7 +56,7 @@ public:
                         WHEN target_mod_revision    IS NOT NULL THEN $compare(op, mod_revision,    target_mod_revision)
                         WHEN target_version         IS NOT NULL THEN $compare(op, version,         target_version)
                         WHEN target_value           IS NOT NULL THEN $compare(op, value,           target_value)
-                        ELSE false
+                        ELSE mod_revision IS NULL
                     END) AS result,
                 FROM AS_TABLE($target) AS target_table
                 LEFT JOIN kv           AS source_table USING(key);)"
@@ -89,7 +89,7 @@ public:
                 .AddMember("target_create_revision")
                     .OptionalInt64(TxnCmpRequest.TargetCreateRevision)
                 .AddMember("target_mod_revision")
-                    .OptionalInt64(TxnCmpRequest.TargetModRevision)
+                    .OptionalInt64(TxnCmpRequest.TargetModRevision.Defined() && *TxnCmpRequest.TargetModRevision == 0 ? Nothing() : TxnCmpRequest.TargetModRevision)
                 .AddMember("target_version")
                     .OptionalInt64(TxnCmpRequest.TargetVersion)
                 .AddMember("target_value")

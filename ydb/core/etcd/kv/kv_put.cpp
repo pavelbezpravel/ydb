@@ -78,15 +78,13 @@ public:
 
         auto& newKVParam = params.AddParam("$new_kv");
         newKVParam.BeginList();
-        for (const auto& [key, value] : Request.KVs) {
-            newKVParam.AddListItem()
-                .BeginStruct()
-                .AddMember("key")
-                    .String(key)
-                .AddMember("new_value")
-                    .String(value)
-                .EndStruct();
-        }
+        newKVParam.AddListItem()
+            .BeginStruct()
+            .AddMember("key")
+                .String(Request.Key)
+            .AddMember("new_value")
+                .String(Request.Value)
+            .EndStruct();
         newKVParam.EndList();
         newKVParam.Build();
 
@@ -101,20 +99,19 @@ public:
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
-            Response.PrevKVs.reserve(parser.RowsCount());
-            while (parser.TryNextRow()) {
-                auto mod_revision = parser.ColumnParser("mod_revision").GetOptionalInt64();
-                if (!mod_revision) {
-                    continue;
-                }
-                TKeyValue kv {
+            Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 0 or 1 row in database response");
+
+            parser.TryNextRow();
+
+            auto mod_revision = parser.ColumnParser("mod_revision").GetOptionalInt64();
+            if (mod_revision) {
+                Response.PrevKV = {
                     .Key = std::move(parser.ColumnParser("key").GetString()),
                     .ModRevision = *mod_revision,
                     .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
                     .Version = *parser.ColumnParser("version").GetOptionalInt64(),
                     .Value = std::move(*parser.ColumnParser("value").GetOptionalString()),
                 };
-                Response.PrevKVs.emplace_back(std::move(kv));
             }
         } else {
             Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");

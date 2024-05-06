@@ -44,7 +44,8 @@ etcdserverpb::RangeResponse FillResponse(const NYdb::NEtcd::TRangeResponse& resp
 
 NYdb::NEtcd::TPutRequest FillRequest(const etcdserverpb::PutRequest& request) {
     return {
-        {{request.key(), request.value()}},
+        request.key(),
+        request.value(),
         request.prev_kv(),
         request.ignore_value()
     };
@@ -55,18 +56,14 @@ etcdserverpb::PutResponse FillResponse(const NYdb::NEtcd::TPutResponse& response
     auto* header = out.mutable_header();
     header->set_revision(response.Revision);
 
-    if (response.PrevKVs.empty()) {
-        return out;
+    if (response.PrevKV) {
+        auto* kv = out.mutable_prev_kv();
+        kv->set_key(response.PrevKV->Key);
+        kv->set_create_revision(response.PrevKV->CreateRevision);
+        kv->set_mod_revision(response.PrevKV->ModRevision);
+        kv->set_version(response.PrevKV->Version);
+        kv->set_value(response.PrevKV->Value);
     }
-
-    auto PrevKV = response.PrevKVs.front();
-    auto* kv = out.mutable_prev_kv();
-
-    kv->set_key(PrevKV.Key);
-    kv->set_create_revision(PrevKV.CreateRevision);
-    kv->set_mod_revision(PrevKV.ModRevision);
-    kv->set_version(PrevKV.Version);
-    kv->set_value(PrevKV.Value);
 
     return out;
 }

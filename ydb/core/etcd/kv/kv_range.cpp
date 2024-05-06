@@ -3,7 +3,6 @@
 #include "events.h"
 #include "proto.h"
 
-#include <limits>
 #include <utility>
 
 #include <ydb/core/etcd/base/query_base.h>
@@ -35,29 +34,61 @@ public:
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
 
-            DECLARE $revision AS Int64;
             DECLARE $key AS String;
-            DECLARE $range_end AS String;
-            DECLARE $min_create_revision AS Int64;
-            DECLARE $max_create_revision AS Int64;
-            DECLARE $min_mod_revision AS Int64;
-            DECLARE $max_mod_revision AS Int64;
-            DECLARE $limit AS Uint64;
+            DECLARE $range_end AS String;)");
+        if (Request.Revision > 0) {
+            query << R"(
+            DECLARE $revision AS Int64;)";
+        }
+        if (Request.MinCreateRevision > 0) {
+            query << R"(
+            DECLARE $min_create_revision AS Int64;)";
+        }
+        if (Request.MaxCreateRevision > 0) {
+            query << R"(
+            DECLARE $max_create_revision AS Int64;)";
+        }
+        if (Request.MinModRevision > 0) {
+            query << R"(
+            DECLARE $min_mod_revision AS Int64;)";
+        }
+        if (Request.MaxModRevision > 0) {
+            query << R"(
+            DECLARE $max_mod_revision AS Int64;)";
+        }
+        if (Request.Limit > 0) {
+            query << R"(
+            DECLARE $limit AS Uint64;)";
+        }
+        query << Sprintf(R"(
 
             SELECT %s
                 FROM kv
                 WHERE %s
-                    AND mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision)
-                    AND $min_create_revision <= create_revision
-                    AND create_revision <= $max_create_revision
-                    AND $min_mod_revision <= mod_revision
-                    AND mod_revision <= $max_mod_revision)",
-            Request.CountOnly ? "COUNT(*) AS count" : "kv.*, COUNT(*) OVER() AS count",
-            compareCond.c_str()
+                    AND %s)",
+            Request.CountOnly ? "COUNT(*) AS count" : Request.Limit > 0 ? "COUNT(*) OVER() AS count, kv.*" : "*",
+            compareCond.c_str(),
+            Request.Revision > 0 ? "mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision)" : "delete_revision IS NULL"
         );
 
+        if (Request.MinCreateRevision > 0) {
+            query << R"(
+                    AND $min_create_revision <= create_revision)";
+        }
+        if (Request.MaxCreateRevision > 0) {
+            query << R"(
+                    AND create_revision <= $max_create_revision)";
+        }
+        if (Request.MinModRevision > 0) {
+            query << R"(revision
+                    AND $min_mod_revision <= mod_revision)";
+        }
+        if (Request.MaxCreateRevision > 0) {
+            query << R"(
+                    AND mod_revision <= $max_mod_revision)";
+        }
         if (Request.SortOrder != TRangeRequest::ESortOrder::NONE) {
-            TString order = [&]() {
+            auto order = [&]() {
                 switch (Request.SortOrder) {
                     case TRangeRequest::ESortOrder::ASCEND:
                         return "ASC";
@@ -68,7 +99,7 @@ public:
                 }
             }();
 
-            TString target = [&]() {
+            auto target = [&]() {
                 switch (Request.SortTarget) {
                     case TRangeRequest::ESortTarget::KEY:
                         return "key";
@@ -86,9 +117,8 @@ public:
             }();
 
             query << Sprintf(R"(
-                    ORDER BY %s %s)", target.c_str(), order.c_str());
+                    ORDER BY %s %s)", target, order);
         }
-
         if (Request.Limit > 0) {
             query << R"(
                 LIMIT $limit)";
@@ -98,30 +128,48 @@ public:
 
         NYdb::TParamsBuilder params;
         params
-            .AddParam("$revision")
-                .Int64(Request.Revision == 0 ? Revision : Request.Revision)
-                .Build()
             .AddParam("$key")
                 .String(Request.Key)
                 .Build()
             .AddParam("$range_end")
                 .String(Request.RangeEnd)
-                .Build()
-            .AddParam("$min_create_revision")
-                .Int64(Request.MinCreateRevision == 0 ? 0 : Request.MinCreateRevision)
-                .Build()
-            .AddParam("$max_create_revision")
-                .Int64(Request.MaxCreateRevision == 0 ? std::numeric_limits<i64>::max() : Request.MaxCreateRevision)
-                .Build()
-            .AddParam("$min_mod_revision")
-                .Int64(Request.MinModRevision == 0 ? 0 : Request.MinModRevision)
-                .Build()
-            .AddParam("$max_mod_revision")
-                .Int64(Request.MaxModRevision == 0 ? std::numeric_limits<i64>::max() : Request.MaxModRevision)
-                .Build()
-            .AddParam("$limit")
-                .Uint64(Request.Limit + 1) // to fill TRangeResponse::more field
                 .Build();
+        if (Request.Revision > 0) {
+            params
+                .AddParam("$revision")
+                    .Int64(Request.Revision)
+                    .Build();
+        }
+        if (Request.MinCreateRevision > 0) {
+            params
+                .AddParam("$min_create_revision")
+                    .Int64(Request.MinCreateRevision)
+                    .Build();
+        }
+        if (Request.MaxCreateRevision > 0) {
+            params
+                .AddParam("$max_create_revision")
+                    .Int64(Request.MaxCreateRevision)
+                    .Build();
+        }
+        if (Request.MinModRevision > 0) {
+            params
+                .AddParam("$min_mod_revision")
+                    .Int64(Request.MinModRevision)
+                    .Build();
+        }
+        if (Request.MaxModRevision > 0) {
+            params
+                .AddParam("$max_mod_revision")
+                    .Int64(Request.MaxModRevision)
+                    .Build();
+        }
+        if (Request.Limit > 0) {
+            params
+                .AddParam("$limit")
+                    .Uint64(Request.Limit + 1) // to fill TRangeResponse::more field
+                    .Build();
+        }
 
         RunDataQuery(query, &params, TxControl);
     }
@@ -142,15 +190,17 @@ public:
             Response.More = false;
             Response.KVs = {};
         } else {
-            Response.Count = 0;
-            auto responseCount = Request.Limit == 0 ? parser.RowsCount() : std::min(parser.RowsCount(), Request.Limit);
+            Response.Count = Request.Limit > 0 ? 0 : parser.RowsCount();
+            auto responseCount = Request.Limit > 0 ? std::min(parser.RowsCount(), Request.Limit) : parser.RowsCount();
 
             Response.More = parser.RowsCount() > responseCount;
 
             Response.KVs.reserve(responseCount);
             while (Response.KVs.size() < responseCount) {
                 parser.TryNextRow();
-                Response.Count = parser.ColumnParser("count").GetUint64();
+                if (Request.Limit > 0) {
+                    Response.Count = parser.ColumnParser("count").GetUint64();
+                }
 
                 TKeyValue kv{
                     .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
