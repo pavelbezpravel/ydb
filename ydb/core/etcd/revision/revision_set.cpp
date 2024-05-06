@@ -16,9 +16,8 @@ namespace {
 class TRevisionSetActor : public TQueryBase {
 public:
     TRevisionSetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision)
-        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
-        , CompactRevision(compactRevision) {
-        LOG_E("[TRevisionSetActor] TRevisionSetActor::TRevisionSetActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision) {
+        LOG_D("[TRevisionSetActor] TRevisionSetActor::TRevisionSetActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {
@@ -69,12 +68,9 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TRevisionSetActor] TRevisionSetActor::OnFinish(); Revision: " << Revision);
+        LOG_D("[TRevisionSetActor] TRevisionSetActor::OnFinish(); Revision: " << Revision << " CompactRevision: " << CompactRevision);
         Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision));
     }
-
-private:
-    i64 CompactRevision;
 };
 
 } // anonymous namespace

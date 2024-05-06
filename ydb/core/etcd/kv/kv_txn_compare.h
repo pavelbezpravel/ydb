@@ -7,6 +7,6 @@ namespace NYdb::NEtcd {
 
 struct TTxnCompareRequest;
 
-NActors::IActor* CreateKVTxnCompareActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TVector<TTxnCompareRequest> request, std::array<size_t, 2> RequestSizes);
+NActors::IActor* CreateKVTxnCompareActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision, TVector<TTxnCompareRequest> request, std::array<size_t, 2> RequestSizes);
 
 } // namespace NYdb::NEtcd

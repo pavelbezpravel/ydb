@@ -16,7 +16,8 @@ namespace {
 class TRevisionGetActor : public TQueryBase {
 public:
     TRevisionGetActor(ui64 logComponent, TString&& sessionId, TString&& path, NKikimr::TQueryBase::TTxControl txControl, TString&& txId)
-        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), {}) {
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), {}, {}) {
+        LOG_D("[TRevisionGetActor] TRevisionGetActor::TRevisionGetActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {
@@ -47,11 +48,9 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
+        LOG_D("[TRevisionGetActor] TRevisionGetActor::OnFinish(); Revision: " << Revision << " CompactRevision: " << CompactRevision);
         Send(Owner, new TEvEtcdRevision::TEvRevisionResponse(status, std::move(issues), SessionId, TxId, Revision, CompactRevision));
     }
-
-private:
-    i64 CompactRevision;
 };
 
 } // anonymous namespace

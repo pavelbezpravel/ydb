@@ -96,31 +96,19 @@ protected:
         Revision = ev->Get()->Revision;
         CompactRevision = ev->Get()->CompactRevision;
 
-        if constexpr (std::is_same_v<TReq, TRangeRequest> || std::is_same_v<TReq, TCompactionRequest>) {
-            if (Request.Revision != 0 && Request.Revision > Revision) {
-                auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision is a future revision"};
-                Finish(Ydb::StatusIds::PRECONDITION_FAILED, {errMessage});
-                return;
-            } else if (Request.Revision != 0 && Request.Revision < CompactRevision) {
-                auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision has been compacted"};
-                Finish(Ydb::StatusIds::PRECONDITION_FAILED, {errMessage});
-                return;
-            }
-        }
-
         RegisterKVRequest(TxControl);
     }
 
     void RegisterKVRequest(NKikimr::TQueryBase::TTxControl txControl) {
         this->Become(&TKVActor<TEvReq, TEvResp>::KVStateFunc);
 
-        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Revision, std::move(Request)));
+        this->Register(CreateKVQueryActor(LogComponent, SessionId, Path, txControl, TxId, Revision, CompactRevision, std::move(Request)));
     }
 
     STRICT_STFUNC(KVStateFunc, hFunc(TEvResp, Handle))
 
     void Handle(TEvResp::TPtr& ev) {
-        LOG_E("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response);
+        LOG_D("[TKVBaseActor] TKVBaseActor::Handle(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Response: " << ev->Get()->Response);
         if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
             Finish(ev->Get()->Status, std::move(ev->Get()->Issues));
             return;

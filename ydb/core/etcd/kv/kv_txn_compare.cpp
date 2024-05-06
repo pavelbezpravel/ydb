@@ -18,7 +18,7 @@ public:
         , CommitTx(std::exchange(TxControl.Commit, false))
         , RequestSizes(requestSizes)
         , Request(request) {
-        LOG_E("[TKVTxnCompareActor] TKVTxnCompareActor::TKVTxnCompareActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
+        LOG_D("[TKVTxnCompareActor] TKVTxnCompareActor::TKVTxnCompareActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\"");
     }
 
     void OnRunQuery() override {
@@ -124,7 +124,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVTxnCompareActor] TKVTxnCompareActor::OnFinish(); Response: " << Response);
+        LOG_D("[TKVTxnCompareActor] TKVTxnCompareActor::OnFinish(); Response: " << Response);
         Send(Owner, new TEvEtcdKV::TEvTxnCompareResponse(status, std::move(issues), SessionId, TxId, std::move(Response)));
     }
 
@@ -137,8 +137,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVTxnCompareActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TVector<TTxnCompareRequest> request, std::array<size_t, 2> requestSizes) {
-    return new TKVTxnCompareActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request), requestSizes);
+NActors::IActor* CreateKVTxnCompareActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision, TVector<TTxnCompareRequest> request, std::array<size_t, 2> requestSizes) {
+    return new TKVTxnCompareActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision, std::move(request), requestSizes);
 }
 
 } // namespace NYdb::NEtcd

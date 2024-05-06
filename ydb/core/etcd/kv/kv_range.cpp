@@ -17,14 +17,19 @@ namespace {
 
 class TKVRangeActor : public TQueryBase {
 public:
-    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, i64 revision, TRangeRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
+    TKVRangeActor(ui64 logComponent, TString&& sessionId, TString path, TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision, TRangeRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
-        LOG_E("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
+        LOG_D("[TKVRangeActor] TKVRangeActor::TKVRangeActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << Request);
     }
 
     void OnRunQuery() override {
+        if (Request.Revision != 0 && (CompactRevision > Request.Revision || Request.Revision > Revision)) {
+            CommitTransaction();
+            return;
+        }
+
         auto compareCond = Compare(Request.Key, Request.RangeEnd);
 
         TStringBuilder query;
@@ -170,7 +175,18 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVRangeActor] TKVRangeActor::OnFinish(); Response: " << Response);
+        LOG_D("[TKVRangeActor] TKVRangeActor::OnFinish(); Response: " << Response);
+        if (Request.Revision != 0 && Request.Revision > Revision) {
+            auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision is a future revision"};
+            status = Ydb::StatusIds::PRECONDITION_FAILED;
+            issues.Clear();
+            issues.AddIssue(errMessage);
+        } else if (Request.Revision != 0 && Request.Revision < CompactRevision) {
+            auto errMessage = NYql::TIssue{"etcdserver: mvcc: required revision has been compacted"};
+            status = Ydb::StatusIds::PRECONDITION_FAILED;
+            issues.Clear();
+            issues.AddIssue(errMessage);
+        }
         Send(Owner, new TEvEtcdKV::TEvRangeResponse(status, std::move(issues), SessionId, TxId, std::move(Response)));
     }
 
@@ -182,8 +198,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TRangeRequest request) {
-    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision, TRangeRequest request) {
+    return new TKVRangeActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

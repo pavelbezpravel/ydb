@@ -16,11 +16,12 @@ namespace {
 
 class TKVPutActor : public TQueryBase {
 public:
-    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, TPutRequest&& request)
-        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision)
+    TKVPutActor(ui64 logComponent, TString&& sessionId, TString&& path, TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision, TPutRequest&& request)
+        : TQueryBase(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision)
         , CommitTx(std::exchange(TxControl.Commit, false))
         , Request(request) {
-        LOG_E("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
+        TxControl.Commit = false;
+        LOG_D("[TKVPutActor] TKVPutActor::TKVPutActor(); TxId: \"" << TxId << "\" SessionId: \"" << SessionId << "\" TxControl: \"" << TxControl.Begin << "\" \"" << TxControl.Commit << "\" \"" << TxControl.Continue << "\" Request: " << request);
     }
 
     void OnRunQuery() override {
@@ -131,7 +132,7 @@ public:
     }
 
     void OnFinish(Ydb::StatusIds::StatusCode status, NYql::TIssues&& issues) override {
-        LOG_E("[TKVPutActor] TKVPutActor::OnFinish(); Owner: " << Owner << ", Response: " << Response << ", Issues: \"" << issues.ToString() << "\" Status: " << status);
+        LOG_D("[TKVPutActor] TKVPutActor::OnFinish(); Owner: " << Owner << ", Response: " << Response << ", Issues: \"" << issues.ToString() << "\" Status: " << status);
         if (status == Ydb::StatusIds::PRECONDITION_FAILED) {
             auto errMessage = NYql::TIssue{"etcdserver: key not found"};
             issues.Clear();
@@ -148,8 +149,8 @@ private:
 
 } // anonymous namespace
 
-NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, TPutRequest request) {
-    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, std::move(request));
+NActors::IActor* CreateKVQueryActor(ui64 logComponent, TString sessionId, TString path, NKikimr::TQueryBase::TTxControl txControl, TString txId, i64 revision, i64 compactRevision, TPutRequest request) {
+    return new TKVPutActor(logComponent, std::move(sessionId), std::move(path), txControl, std::move(txId), revision, compactRevision, std::move(request));
 }
 
 } // namespace NYdb::NEtcd

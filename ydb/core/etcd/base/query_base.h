@@ -5,16 +5,23 @@
 #include <ydb/library/actors/core/log.h>
 #include <ydb/library/query_actor/query_actor.h>
 
-#define LOG_E(stream) LOG_ERROR_S(*NActors::TlsActivationContext, NKikimrServices::KQP_PROXY, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_T(stream) LOG_TRACE_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_D(stream) LOG_DEBUG_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_I(stream) LOG_INFO_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_N(stream) LOG_NOTICE_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_W(stream) LOG_WARN_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_E(stream) LOG_ERROR_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
+#define LOG_C(stream) LOG_CRIT_S(*NActors::TlsActivationContext, LogComponent, "[ydb] [ETCD_FEATURE]: " << stream)
 
 namespace NYdb::NEtcd {
 
 class TQueryBase : public NKikimr::TQueryBase {
 public:
-    TQueryBase(ui64 logComponent, TString&& sessionId, TString&& database, TTxControl txControl, TString&& txId, i64 revision)
+    TQueryBase(ui64 logComponent, TString&& sessionId, TString&& database, TTxControl txControl, TString&& txId, i64 revision, i64 compactRevision)
         : NKikimr::TQueryBase(logComponent, sessionId, database)
         , TxControl(txControl)
-        , Revision(revision) {
+        , Revision(revision)
+        , CompactRevision(compactRevision) {
         TxId = std::move(txId);
     }
 
@@ -63,6 +70,7 @@ protected:
 
     TTxControl TxControl;
     i64 Revision;
+    i64 CompactRevision;
 };
 
 } // namespace NYdb::NEtcd
