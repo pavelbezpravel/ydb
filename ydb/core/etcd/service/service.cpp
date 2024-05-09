@@ -80,11 +80,7 @@ private:
     }
 
     void ProcessStored() {
-        while (!StoredRequests.empty() && Requests.size() < kMaxSessionCount) {
-            const auto& request = StoredRequests.front();
-            std::visit([&](const auto& ev) {
-                SendRequest(ev);
-            }, request);
+        while (!StoredRequests.empty() && std::visit([&](const auto& ev) { return SendRequest(ev); }, StoredRequests.front())) {
             StoredRequests.pop();
         }
     }
@@ -132,7 +128,7 @@ private:
     )
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
-        SendRequest(ev);
+        HandleRequest(ev);
     }
 
     void Handle(TEvEtcdKV::TEvCompactionResponse::TPtr& ev) {
@@ -148,7 +144,7 @@ private:
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeRequest::TPtr& ev) {
-        SendRequest(ev);
+        HandleRequest(ev);
     }
 
     void Handle(TEvEtcdKV::TEvDeleteRangeResponse::TPtr& ev) {
@@ -164,7 +160,7 @@ private:
     }
 
     void Handle(TEvEtcdKV::TEvPutRequest::TPtr& ev) {
-        SendRequest(ev);
+        HandleRequest(ev);
     }
 
     void Handle(TEvEtcdKV::TEvPutResponse::TPtr& ev) {
@@ -180,7 +176,7 @@ private:
     }
 
     void Handle(TEvEtcdKV::TEvRangeRequest::TPtr& ev) {
-        SendRequest(ev);
+        HandleRequest(ev);
     }
 
     void Handle(TEvEtcdKV::TEvRangeResponse::TPtr& ev) {
@@ -196,7 +192,7 @@ private:
     }
 
     void Handle(TEvEtcdKV::TEvTxnRequest::TPtr& ev) {
-        SendRequest(ev);
+        HandleRequest(ev);
     }
 
     void Handle(TEvEtcdKV::TEvTxnResponse::TPtr& ev) {
@@ -212,11 +208,21 @@ private:
     }
 
     template<typename TEventType>
-    void SendRequest(const TAutoPtr<NActors::TEventHandle<TEventType>>& ev) {
-        if (Requests.size() >= kMaxSessionCount) {
+    void HandleRequest(const TAutoPtr<NActors::TEventHandle<TEventType>>& ev) {
+        if (!SendRequest(ev)) {
             StoredRequests.emplace(ev);
-            return;
         }
+    }
+
+    template<typename TEventType>
+    [[nodiscard]] bool SendRequest(const TAutoPtr<NActors::TEventHandle<TEventType>>& ev) {
+        if (Requests.size() >= kMaxSessionCount) {
+            return false;
+        }
+        if ((ev->Get()->Request.IsWrite() && !Requests.empty()) || (!ev->Get()->Request.IsWrite() && !Requests.empty() && RunningWriteReq)) {
+            return false;
+        }
+        RunningWriteReq = ev->Get()->Request.IsWrite();
         auto sessionId = TString{};
         if (!SessionIds.empty()) {
             sessionId = SessionIds.front();
@@ -224,6 +230,7 @@ private:
         }
         Register(NYdb::NEtcd::CreateKVActor(kLogComponent, sessionId, Path, Cookie, std::move(ev->Get()->Request)));
         Requests[Cookie++] = ev->Sender;
+        return true;
     }
 
 private:
@@ -240,6 +247,7 @@ private:
     ssize_t TablesCreating = 0;
     TQueue<TRequestPtr> StoredRequests;
     TQueue<TString> SessionIds;
+    bool RunningWriteReq = false;
     ui64 Cookie = 0;
     TMap<ui64, NActors::TActorId> Requests;
 };
