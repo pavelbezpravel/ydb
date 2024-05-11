@@ -9,6 +9,8 @@
 #include <ydb/core/etcd/revision/events.h>
 #include <ydb/core/etcd/revision/revision_table_create.h>
 
+#include <ydb/core/protos/config.pb.h>
+
 #include <ydb/library/actors/core/actor.h>
 #include <ydb/library/actors/core/actor_bootstrapped.h>
 #include <ydb/library/actors/core/hfunc.h>
@@ -23,6 +25,10 @@ namespace NYdb::NEtcd {
 
 class TEtcdService : public NActors::TActorBootstrapped<TEtcdService> {
 public:
+    explicit TEtcdService(const NKikimrConfig::TQueryServiceConfig& queryServiceConfig)
+        : MaxSessionCount(queryServiceConfig.GetMaxSessionCount()) {
+    }
+
     void Bootstrap() {
         Become(&TEtcdService::CreateTablesStateFunc);
     }
@@ -209,14 +215,14 @@ private:
 
     template<typename TEventType>
     void HandleRequest(const TAutoPtr<NActors::TEventHandle<TEventType>>& ev) {
-        if (!SendRequest(ev)) {
+        if (!StoredRequests.empty() || !SendRequest(ev)) {
             StoredRequests.emplace(ev);
         }
     }
 
     template<typename TEventType>
     [[nodiscard]] bool SendRequest(const TAutoPtr<NActors::TEventHandle<TEventType>>& ev) {
-        if (Requests.size() >= kMaxSessionCount) {
+        if (Requests.size() >= MaxSessionCount) {
             return false;
         }
         if ((ev->Get()->Request.IsWrite() && !Requests.empty()) || (!ev->Get()->Request.IsWrite() && !Requests.empty() && RunningWriteReq)) {
@@ -229,7 +235,7 @@ private:
             SessionIds.pop();
         }
         Register(NYdb::NEtcd::CreateKVActor(kLogComponent, sessionId, Path, Cookie, std::move(ev->Get()->Request)));
-        Requests[Cookie++] = ev->Sender;
+        Requests[Cookie++] = std::move(ev->Sender);
         return true;
     }
 
@@ -241,8 +247,8 @@ private:
         TEvEtcdKV::TEvTxnRequest::TPtr,
         TEvEtcdKV::TEvCompactionRequest::TPtr>;
 
-    static constexpr ui64 kMaxSessionCount = 10;
     static constexpr auto kLogComponent = NKikimrServices::KQP_PROXY;
+    ui64 MaxSessionCount;
     const TString Path = "/Root/.etcd";
     ssize_t TablesCreating = 0;
     TQueue<TRequestPtr> StoredRequests;
@@ -252,8 +258,8 @@ private:
     TMap<ui64, NActors::TActorId> Requests;
 };
 
-NActors::IActor* CreateEtcdService() {
-    return new TEtcdService();
+NActors::IActor* CreateEtcdService(const NKikimrConfig::TQueryServiceConfig& queryServiceConfig) {
+    return new TEtcdService(queryServiceConfig);
 }
 
 } // namespace NYdb::NEtcd

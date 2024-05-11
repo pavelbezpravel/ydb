@@ -2774,7 +2774,7 @@ TEtcdServiceInitializer::TEtcdServiceInitializer(const TKikimrRunConfig& runConf
 void TEtcdServiceInitializer::InitializeServices(NActors::TActorSystemSetup* setup, const NKikimr::TAppData* appData) {
     setup->LocalServices.emplace_back(
         NYdb::NEtcd::MakeEtcdServiceId(),
-        TActorSetupCmd(NYdb::NEtcd::CreateEtcdService(), TMailboxType::HTSwap, appData->UserPoolId)
+        TActorSetupCmd(NYdb::NEtcd::CreateEtcdService(Config.GetQueryServiceConfig()), TMailboxType::HTSwap, appData->UserPoolId)
     );
 }
 
