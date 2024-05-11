@@ -86,6 +86,31 @@ private:
     }
 
     void ProcessStored() {
+        if (!StoredRequests.empty() && std::holds_alternative<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front())) {
+            if (!Requests.empty()) {
+                return;
+            }
+            RunningWriteReq = true;
+            auto sessionId = TString{};
+            if (!SessionIds.empty()) {
+                sessionId = SessionIds.front();
+                SessionIds.pop();
+            }
+            ui64 totalSize = 0;
+            TVector<TPutRequest> requests;
+            while (!StoredRequests.empty() && std::holds_alternative<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front())) {
+                auto& req = std::get<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front());
+                if (totalSize += req->Get()->Request.Key.size() + req->Get()->Request.Value.size() > 40'000'000) {
+                    break;
+                }
+                requests.emplace_back(std::move(req->Get()->Request));
+                Requests[Cookie++] = std::move(req->Sender);
+                StoredRequests.pop();
+            }
+            Register(NYdb::NEtcd::CreateKVActor(kLogComponent, sessionId, Path, Cookie, std::move(requests)));
+            return;
+        }
+
         while (!StoredRequests.empty() && std::visit([&](const auto& ev) { return SendRequest(ev); }, StoredRequests.front())) {
             StoredRequests.pop();
         }
@@ -131,6 +156,8 @@ private:
 
         hFunc(TEvEtcdKV::TEvTxnRequest, Handle)
         hFunc(TEvEtcdKV::TEvTxnResponse, Handle)
+
+        hFunc(TEvEtcdKV::TEvResponse, Handle)
     )
 
     void Handle(TEvEtcdKV::TEvCompactionRequest::TPtr& ev) {
@@ -210,6 +237,21 @@ private:
         SessionIds.push(std::move(ev->Get()->SessionId));
         Send(it->second, ev->Release());
         Requests.erase(it);
+        ProcessStored();
+    }
+
+    void Handle(TEvEtcdKV::TEvResponse::TPtr& ev) {
+        for (ui64 i = 0; i < ev->Get()->Responses.size(); ++i) {
+            auto it = Requests.find(ev->Cookie - ev->Get()->Responses.size() + i);
+            if (it == Requests.end()) {
+                LOG_W("Request doesn't exist (TEvEtcdKV::TEvPutResponse).");
+                continue;
+            }
+            auto copy = ev->Get()->Issues;
+            Send(it->second, new TEvEtcdKV::TEvPutResponse(ev->Get()->Status, std::move(copy), {}, {}, std::move(ev->Get()->Responses[i])));
+            Requests.erase(it);
+        }
+        SessionIds.push(std::move(ev->Get()->SessionId));
         ProcessStored();
     }
 

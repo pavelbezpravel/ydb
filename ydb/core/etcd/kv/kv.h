@@ -20,4 +20,6 @@ NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString pat
 
 NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TTxnRequest request);
 
+NActors::IActor* CreateKVActor(ui64 logComponent, TString sessionId, TString path, ui64 cookie, TVector<TPutRequest> request);
+
 } // namespace NYdb::NEtcd
