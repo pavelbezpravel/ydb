@@ -1008,6 +1008,7 @@ message TQueryServiceConfig {
     optional NYql.TGenericGatewayConfig Generic = 11;
     optional TFinalizeScriptServiceConfig FinalizeScriptServiceConfig = 12;
     optional uint64 ProgressStatsPeriodMs = 14 [default = 0]; // 0 = disabled
+    optional uint64 MaxSessionCount = 17 [default = 10];
 }
 
 // Config describes immediate controls and allows

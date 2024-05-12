@@ -49,6 +49,8 @@
 
 #include <ydb/core/driver_lib/version/version.h>
 
+#include <ydb/core/etcd/service/service.h>
+
 #include <ydb/core/grpc_services/grpc_mon.h>
 #include <ydb/core/grpc_services/grpc_request_proxy.h>
 #include <ydb/core/grpc_services/db_metadata_cache.h>
@@ -2764,6 +2766,16 @@ void TGraphServiceInitializer::InitializeServices(NActors::TActorSystemSetup* se
     setup->LocalServices.emplace_back(
         NGraph::MakeGraphServiceId(),
         TActorSetupCmd(NGraph::CreateGraphService(appData->TenantName), TMailboxType::HTSwap, appData->UserPoolId));
+}
+
+TEtcdServiceInitializer::TEtcdServiceInitializer(const TKikimrRunConfig& runConfig)
+    : IKikimrServicesInitializer(runConfig) {}
+
+void TEtcdServiceInitializer::InitializeServices(NActors::TActorSystemSetup* setup, const NKikimr::TAppData* appData) {
+    setup->LocalServices.emplace_back(
+        NYdb::NEtcd::MakeEtcdServiceId(),
+        TActorSetupCmd(NYdb::NEtcd::CreateEtcdService(Config.GetQueryServiceConfig()), TMailboxType::HTSwap, appData->UserPoolId)
+    );
 }
 
 } // namespace NKikimrServicesInitializers

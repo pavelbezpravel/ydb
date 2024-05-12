@@ -5,6 +5,9 @@ SRCS(
     audit_dml_operations.cpp
     db_metadata_cache.h
 
+    etcd/api/kv/utils/check_request.cpp
+    etcd/api/kv/utils/check_response.cpp
+    etcd/api/kv/utils/rpc_converters.cpp
     etcd/api/kv/service.cpp
 
     grpc_endpoint_publish_actor.cpp
@@ -103,6 +106,8 @@ PEERDIR(
     ydb/core/control
     ydb/core/discovery
     ydb/core/engine
+    ydb/core/etcd/kv
+    ydb/core/etcd/service
     ydb/core/formats
     ydb/core/fq/libs/events
     ydb/core/fq/libs/control_plane_proxy/events

@@ -16,6 +16,7 @@ RECURSE(
     driver_lib
     engine
     erasure
+    etcd
     external_sources
     filestore
     formats

@@ -18,11 +18,22 @@
 namespace NYdb::NEtcd {
 
 struct TKeyValue {
-    TString key;
-    i64 create_revision;
-    i64 mod_revision;
-    i64 version;
-    TString value;
+    TString Key;
+    i64 ModRevision;
+    i64 CreateRevision;
+    i64 Version;
+    TString Value;
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TKeyValue& data) {
+        str << "{ "
+            << "Key: \"" << data.Key << "\", "
+            << "Value: \"" << data.Value << "\", "
+            << "CreateRevision: " << data.CreateRevision << ", "
+            << "ModRevision: " << data.ModRevision << ", "
+            << "Version: " << data.Version
+            << " }";
+        return str;
+    }
 };
 
 struct TRangeRequest {
@@ -33,52 +44,155 @@ struct TRangeRequest {
     };
     enum class ESortTarget {
         KEY,
+        VERSION,
         CREATE,
         MOD,
-        VERSION,
         VALUE,
     };
 
-    TString key;
-    TString range_end;
-    size_t limit;
-    i64 revision;
-    ESortOrder sort_order;
-    ESortTarget sort_target;
-    bool serializable;
-    bool keys_only;
-    bool count_only;
-    i64 min_mod_revision;
-    i64 max_mod_revision;
-    i64 min_create_revision;
-    i64 max_create_revision;
+    TString Key;
+    TString RangeEnd;
+    size_t Limit;
+    i64 Revision;
+    ESortOrder SortOrder;
+    ESortTarget SortTarget;
+    bool Serializable;
+    bool KeysOnly;
+    bool CountOnly;
+    i64 MinModRevision;
+    i64 MaxModRevision;
+    i64 MinCreateRevision;
+    i64 MaxCreateRevision;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TRangeRequest& data) {
+        str << "[TRangeRequest] { "
+            << "Key: \"" << data.Key << "\", "
+            << "RangeEnd: \"" << data.RangeEnd << "\", "
+            << "Limit: " << data.Limit << ", "
+            << "Revision: " << data.Revision << ", "
+            << "SortOrder: " << std::underlying_type_t<ESortOrder>(data.SortOrder) << ", "
+            << "SortTarget: " << std::underlying_type_t<ESortTarget>(data.SortTarget) << ", "
+            << "Serializable: " << data.Serializable << ", "
+            << "KeysOnly: " << data.KeysOnly << ", "
+            << "CountOnly: " << data.CountOnly << ", "
+            << "MinModRevision: " << data.MinModRevision << ", "
+            << "MaxModRevision: " << data.MaxModRevision << ", "
+            << "MinCreateRevision: " << data.MinCreateRevision << ", "
+            << "MaxCreateRevison: " << data.MaxCreateRevision
+            << " }";
+        return str;
+    }
 };
 
 struct TRangeResponse {
-    TVector<TKeyValue> Kvs;
+    i64 Revision;
+    TVector<TKeyValue> KVs;
     bool More;
     size_t Count;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return false;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TRangeResponse& data) {
+        str << "[TRangeResponse] { "
+            << "More: " << data.More << ", "
+            << "Count: " << data.Count << ", "
+            << "KVs: ";
+
+        for (const auto& kv : data.KVs) {
+            str << kv;
+        }
+
+        str << " }";
+        return str;
+    }
 };
 
 struct TPutRequest {
-    TVector<std::pair<TString, TString>> Kvs;
-    bool PrevKv;
+    TString Key;
+    TString Value;
+    bool PrevKV;
     bool IgnoreValue;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TPutRequest& data) {
+        str << "[TPutRequest] { "
+            << "Key: \"" << data.Key << "\", "
+            << "Value: \"" << data.Value << "\", "
+            << "PrevKV: " << data.PrevKV << ", "
+            << "IgnoreValue: " << data.IgnoreValue << "}";
+        return str;
+    }
 };
 
 struct TPutResponse {
-    TVector<TKeyValue> PrevKvs;
+    i64 Revision;
+    TMaybe<TKeyValue> PrevKV;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TPutResponse& data) {
+        str << "[TPutResponse] { "
+            << "PrevKV: {";
+
+        if (data.PrevKV) {
+            str << data.PrevKV;
+        }
+
+        str << " } }";
+        return str;
+    }
 };
 
 struct TDeleteRangeRequest {
     TString Key;
     TString RangeEnd;
-    bool PrevKv;
+    bool PrevKV;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+    
+    friend IOutputStream& operator<<(IOutputStream& str, const TDeleteRangeRequest& data) {
+        str << "[TDeleteRangeRequest] { "
+            << "Key: \"" << data.Key << "\", "
+            << "RangeEnd: \"" << data.RangeEnd << "\", "
+            << "PrevKV: " << data.PrevKV
+            << " }";
+        return str;
+    }
 };
 
 struct TDeleteRangeResponse {
+    i64 Revision;
     size_t Deleted;
-    TVector<TKeyValue> PrevKvs;
+    TVector<TKeyValue> PrevKVs;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return Deleted > 0;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TDeleteRangeResponse& data) {
+        str << "[TDeleteRangeResponse] { "
+            << "Deleted: " << data.Deleted << ", "
+            << "PrevKVs: { ";
+
+        for (const auto& kv : data.PrevKVs) {
+            str << kv << ", ";
+        }
+        str << " } }";
+        return str;
+    }
 };
 
 struct TTxnRequest;
@@ -107,29 +221,137 @@ struct TTxnCompareRequest {
         NOT_EQUAL,
     };
     ECompareResult Result;
-    TMaybe<i64> Target_create_revision;
-    TMaybe<i64> Target_mod_revision;
-    TMaybe<i64> Target_version;
-    TMaybe<TString> Target_value;
+    TMaybe<i64> TargetCreateRevision;
+    TMaybe<i64> TargetModRevision;
+    TMaybe<i64> TargetVersion;
+    TMaybe<TString> TargetValue;
     TString Key;
-    TString Range_end;
+    TString RangeEnd;
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TTxnCompareRequest& data) {
+        str << "[TTxnCompareRequest] { "
+            << "Result: " << std::underlying_type_t<ECompareResult>(data.Result) << ", ";
+        if (data.TargetCreateRevision) {
+            str << "TargetCreateRevision: " << *data.TargetCreateRevision << ", ";
+        }
+        if (data.TargetModRevision) {
+            str << "TargetModRevision: " << *data.TargetModRevision << ", ";
+        }
+        if (data.TargetVersion) {
+            str << "TargetVersion: " << *data.TargetVersion << ", ";
+        }
+        if (data.TargetValue) {
+            str << "TargetValue: " << *data.TargetValue << ", ";
+        }
+        str << "Key: \"" << data.Key << "\", "
+            << "RangeEnd: \"" << data.RangeEnd << "\" "
+            << " }";
+        return str;
+    }
 };
 
 struct TTxnCompareResponse {
     bool Succeeded;
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TTxnCompareResponse& data) {
+        str << "[TTxnCompareResponse] { "
+            << "Succeeded: " << data.Succeeded
+            << " }";
+        return str;
+    }
 };
 
 struct TTxnRequest {
     TVector<TTxnCompareRequest> Compare;
     std::array<TVector<TRequestOp>, 2> Requests;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return std::ranges::any_of(Requests, [](const TVector<TRequestOp>& requests) {
+            return std::ranges::any_of(requests, [](const TRequestOp& request) {
+                return std::visit([](const auto& r) { return r->IsWrite(); }, request);
+            });
+        });
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TTxnRequest& data) {
+        str << "[TTxnRequest] { "
+            << "Compare: { ";
+        for (const auto& c : data.Compare) {
+            str << c << ", ";
+        }
+        str << " }"
+            << "Requests: ";
+        for (const auto& Requests : data.Requests) {
+            str << "{ ";
+            for (const auto& req : Requests) {
+                str << "{ ";
+                std::visit([&str](auto&& arg) {
+                    str << *arg << ", ";
+            }, req);
+            str << " } ";
+            }
+            str << " }, ";
+        }
+        str << " }";
+        return str;
+    }
 };
 
 struct TTxnResponse {
+    i64 Revision;
     bool Succeeded;
     TVector<TResponseOp> Responses;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return std::ranges::any_of(Responses, [](const TResponseOp& response) {
+            return std::visit([](const auto& r) { return r->IsWrite(); }, response);
+        });
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TTxnResponse& data) {
+        str << "[TTxnResponse] { "
+            << "Succeeded: " << data.Succeeded << ", "
+            << "Responses: { ";
+        for (const auto& resp : data.Responses) {
+            str << "{ ";
+            std::visit([&str](auto&& arg) {
+                    str << *arg << ", ";
+            }, resp);
+            str << " }, ";
+        }
+        str << " } }";
+        return str;
+    }
 };
 
-// TODO [pavelbezpravel]: WIP.
-struct TCompactionResponse {};
+struct TCompactionRequest {
+    i64 Revision;
+    bool Physical;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TCompactionRequest& data) {
+        str << "[TCompactionRequest] { "
+            << "Revision: " << data.Revision << ", "
+            << "Physical: " << data.Physical
+            << " }";
+        return str;
+    }
+};
+
+struct TCompactionResponse {
+    i64 Revision;
+
+    [[nodiscard]] constexpr bool IsWrite() const noexcept {
+        return true;
+    }
+
+    friend IOutputStream& operator<<(IOutputStream& str, const TCompactionResponse&) {
+        str << "[TCompactionResponse] {}";
+        return str;
+    }
+};
 
 } // namespace NYdb::NEtcd

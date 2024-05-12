@@ -62,6 +62,7 @@ PEERDIR(
     ydb/core/driver_lib/cli_config_base
     ydb/core/driver_lib/cli_utils
     ydb/core/driver_lib/version
+    ydb/core/etcd/service
     ydb/core/formats
     ydb/core/fq/libs/init
     ydb/core/fq/libs/logs

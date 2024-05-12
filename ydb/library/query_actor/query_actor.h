@@ -19,7 +19,7 @@
 namespace NKikimr {
 
 class TQueryBase : public NActors::TActorBootstrapped<TQueryBase> {
-protected:
+public:
     struct TTxControl {
         static TTxControl CommitTx();
         static TTxControl BeginTx();
@@ -30,6 +30,8 @@ protected:
         bool Begin = false;
         bool Commit = false;
         bool Continue = false;
+
+        bool operator==(const TTxControl&) const = default;
     };
 
     using TQueryResultHandler = void (TQueryBase::*)();

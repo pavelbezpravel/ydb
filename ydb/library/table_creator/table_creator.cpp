@@ -114,6 +114,7 @@ public:
         if (TtlSettings) {
             tableDesc->MutableTTLSettings()->CopyFrom(*TtlSettings);
         }
+        tableDesc->MutablePartitionConfig()->MutablePartitioningPolicy()->MutableSplitByLoadSettings()->SetEnabled(true);
         Send(MakeTxProxyID(), std::move(request));
     }
 

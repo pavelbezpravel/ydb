@@ -1,6 +1,10 @@
 #include "service.h"
+#include "utils/check_request.h"
+#include "utils/check_response.h"
+#include "utils/rpc_converters.h"
 
 #include <ydb/core/etcd/kv/events.h>
+#include <ydb/core/etcd/service/service.h>
 #include <ydb/core/grpc_services/base/base.h>
 #include <ydb/core/grpc_services/rpc_request_base.h>
 
@@ -12,141 +16,128 @@
 
 namespace NKikimr::NGRpcService {
 
-namespace {
-
-using namespace NActors;
-
-etcdserverpb::RangeResponse FillResponse(const NYdb::NEtcd::TRangeResponse& response) {
-    Y_UNUSED(response);
-    return {};
-}
-
-etcdserverpb::PutResponse FillResponse(const NYdb::NEtcd::TPutResponse& response) {
-    Y_UNUSED(response);
-    return {};
-}
-
-etcdserverpb::DeleteRangeResponse FillResponse(const NYdb::NEtcd::TDeleteRangeResponse& response) {
-    Y_UNUSED(response);
-    return {};
-}
-
-etcdserverpb::TxnResponse FillResponse(const NYdb::NEtcd::TTxnResponse& response) {
-    Y_UNUSED(response);
-    return {};
-
-}
-
-etcdserverpb::CompactionResponse FillResponse(const NYdb::NEtcd::TCompactionResponse& response) {
-    Y_UNUSED(response);
-    return {};
-}
-
-template <typename TEvRequestType, typename TEvResponseType>
-class TEtcdKVRequestRPC : public TActorBootstrapped<TEtcdKVRequestRPC<TEvRequestType, TEvResponseType>> {
+template <typename RpcRequestType, typename EvRequestType, typename EvResponseType>
+class TEtcdKVRequestRPC : public TRpcRequestActor<TEtcdKVRequestRPC<RpcRequestType, EvRequestType, EvResponseType>, RpcRequestType, false> {
 public:
+    using TRpcRequestActorBase = TRpcRequestActor<TEtcdKVRequestRPC<RpcRequestType, EvRequestType, EvResponseType>, RpcRequestType, false>;
+
     static constexpr NKikimrServices::TActivity::EType ActorActivityType() {
         return NKikimrServices::TActivity::GRPC_REQ;
     }
 
-    TEtcdKVRequestRPC(TEvRequestType* request)
-        : Request_(request) {}
+    TEtcdKVRequestRPC(RpcRequestType* request)
+        : TRpcRequestActorBase(request) {}
 
     void Bootstrap() {
-        this->Become(&TEtcdKVRequestRPC::StateFunc);
-        // TODO [pavelbezpravel]: WIP.
+        const auto* req = this->GetProtoRequest();
 
-        this->Send(this->SelfId(), new TEvResponseType({}, {}, {}, {}));
-        // auto req = *Request_->GetProtoRequest();
-        // proto -> struct
-        // this->Register(CreateKvActor(..., struct));
+        if (!req) {
+            ReplyError(grpc::StatusCode::INTERNAL, "Internal error");
+            return;
+        }
+
+        if (const auto status = NEtcd::CheckRequest(*req); !status.ok()) {
+            ReplyError(status.error_code(), status.error_message());
+            return;
+        }
+
+        this->Send(NYdb::NEtcd::MakeEtcdServiceId(), new EvRequestType(NEtcd::FillRequest(*req)));
+        this->Become(&TEtcdKVRequestRPC::StateFunc);
     }
 
 private:
-    STRICT_STFUNC(StateFunc, hFunc(TEvResponseType, Handle))
-    void Handle(TEvResponseType::TPtr& ev) {
-        // if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
-        //     Request_->ReplyWithYdbStatus(Ydb::StatusIds::BAD_REQUEST);
-        // }
-        // else
-        Request_->SendSerializedResult(std::move(FillResponse(ev->Get()->Response).SerializeAsString()), Ydb::StatusIds::SUCCESS);
+    STRICT_STFUNC(StateFunc, hFunc(EvResponseType, Handle))
+    void Handle(EvResponseType::TPtr& ev) {
+        if (ev->Get()->Status != Ydb::StatusIds::SUCCESS) {
+            const auto [errCode, errMessage] = NEtcd::CheckResponse(ev->Get()->Status, ev->Get()->Issues ? ev->Get()->Issues.back().GetMessage() : TString{});
+            ReplyError(errCode, errMessage);
+            return;
+        }
+
+        auto out = NEtcd::FillResponse(ev->Get()->Response);
+        this->Request->Reply(&out, grpc::StatusCode::OK);
         this->PassAway();
     }
 
-private:
-    std::unique_ptr<TEvRequestType> Request_;
+    void ReplyError(grpc::StatusCode code, const TString& error_message) {
+        this->Request->ReplyWithRpcStatus(code, error_message);
+        this->PassAway();
+    }
 };
-
-} // namespace
 
 namespace NEtcd {
 
-using TEvRangeRequest = TGrpcRequestNoOperationCall<
+using TRpcRangeRequest = TGrpcRequestNoOperationCall<
     ::etcdserverpb::RangeRequest,
     ::etcdserverpb::RangeResponse>;
 
 using TRangeRPC = TEtcdKVRequestRPC<
-    TEvRangeRequest,
+    TRpcRangeRequest,
+    NYdb::NEtcd::TEvEtcdKV::TEvRangeRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvRangeResponse>;
 
 void DoRange(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    auto* req = dynamic_cast<TEvRangeRequest*>(p.release());
+    auto* req = dynamic_cast<TRpcRangeRequest*>(p.release());
     Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
     f.RegisterActor(new TRangeRPC(req));
 }
 
-using TEvPutRequest = TGrpcRequestNoOperationCall<
+using TRpcPutRequest = TGrpcRequestNoOperationCall<
     ::etcdserverpb::PutRequest,
     ::etcdserverpb::PutResponse>;
 
 using TPutRPC = TEtcdKVRequestRPC<
-    TEvPutRequest,
+    TRpcPutRequest,
+    NYdb::NEtcd::TEvEtcdKV::TEvPutRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvPutResponse>;
 
 void DoPut(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    auto* req = dynamic_cast<TEvPutRequest*>(p.release());
+    auto* req = dynamic_cast<TRpcPutRequest*>(p.release());
     Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
     f.RegisterActor(new TPutRPC(req));
 }
 
-using TEvDeleteRangeRequest = TGrpcRequestNoOperationCall<
+using TRpcDeleteRangeRequest = TGrpcRequestNoOperationCall<
     ::etcdserverpb::DeleteRangeRequest,
     ::etcdserverpb::DeleteRangeResponse>;
 
 using TDeleteRangeRPC = TEtcdKVRequestRPC<
-    TEvDeleteRangeRequest,
+    TRpcDeleteRangeRequest,
+    NYdb::NEtcd::TEvEtcdKV::TEvDeleteRangeRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvDeleteRangeResponse>;
 
 void DoDeleteRange(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    auto* req = dynamic_cast<TEvDeleteRangeRequest*>(p.release());
+    auto* req = dynamic_cast<TRpcDeleteRangeRequest*>(p.release());
     Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
     f.RegisterActor(new TDeleteRangeRPC(req));
 }
 
-using TEvTxnRequest = TGrpcRequestNoOperationCall<
+using TRpcTxnRequest = TGrpcRequestNoOperationCall<
     ::etcdserverpb::TxnRequest,
     ::etcdserverpb::TxnResponse>;
 
 using TTxnRPC = TEtcdKVRequestRPC<
-    TEvTxnRequest,
+    TRpcTxnRequest,
+    NYdb::NEtcd::TEvEtcdKV::TEvTxnRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvTxnResponse>;
 
 void DoTxn(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    auto* req = dynamic_cast<TEvTxnRequest*>(p.release());
+    auto* req = dynamic_cast<TRpcTxnRequest*>(p.release());
     Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
     f.RegisterActor(new TTxnRPC(req));
 }
 
-using TEvCompactionRequest = TGrpcRequestNoOperationCall<
+using TRpcCompactionRequest = TGrpcRequestNoOperationCall<
     ::etcdserverpb::CompactionRequest,
     ::etcdserverpb::CompactionResponse>;
 
 using TCompactRPC = TEtcdKVRequestRPC<
-    TEvCompactionRequest,
+    TRpcCompactionRequest,
+    NYdb::NEtcd::TEvEtcdKV::TEvCompactionRequest,
     NYdb::NEtcd::TEvEtcdKV::TEvCompactionResponse>;
 
 void DoCompact(std::unique_ptr<IRequestNoOpCtx> p, const IFacilityProvider& f) {
-    auto* req = dynamic_cast<TEvCompactionRequest*>(p.release());
+    auto* req = dynamic_cast<TRpcCompactionRequest*>(p.release());
     Y_ABORT_UNLESS(req != nullptr, "Wrong using of TGRpcRequestWrapper");
     f.RegisterActor(new TCompactRPC(req));
 }
