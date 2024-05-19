@@ -27,15 +27,9 @@ public:
             DECLARE $revision AS Int64;
             DECLARE $compact_revision AS Int64;
 
-            $revision = AsList(
-                AsStruct(FALSE AS id, $compact_revision AS revision),
-                AsStruct(TRUE  AS id, $revision AS revision),
-            );
-            UPSERT
-                INTO revision
-                    SELECT *
-                        FROM AS_TABLE($revision);
-            SELECT * FROM revision;)"
+            UPSERT INTO revision (id, revision) VALUES
+                (FALSE, $compact_revision),
+                (TRUE,  $revision);)"
         );
 
         NYdb::TParamsBuilder params;
@@ -51,16 +45,7 @@ public:
     }
 
     void OnQueryResult() override {
-        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
-
-        NYdb::TResultSetParser parser(ResultSets[0]);
-
-        Y_ABORT_UNLESS(parser.RowsCount() == 2, "Expected 2 rows in database response");
-
-        while (parser.TryNextRow()) {
-            auto& rev = *parser.ColumnParser("id").GetOptionalBool() ? Revision : CompactRevision;
-            rev = *parser.ColumnParser("revision").GetOptionalInt64();
-        }
+        Y_ABORT_UNLESS(ResultSets.empty(), "Unexpected database response");
 
         DeleteSession = false;
 

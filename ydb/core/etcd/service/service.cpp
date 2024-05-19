@@ -96,13 +96,9 @@ private:
                 sessionId = SessionIds.front();
                 SessionIds.pop();
             }
-            ui64 totalSize = 0;
             TVector<TPutRequest> requests;
-            while (!StoredRequests.empty() && std::holds_alternative<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front())) {
+            while (!StoredRequests.empty() && requests.size() < MaxSessionCount && std::holds_alternative<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front())) {
                 auto& req = std::get<TEvEtcdKV::TEvPutRequest::TPtr>(StoredRequests.front());
-                if (totalSize += req->Get()->Request.Key.size() + req->Get()->Request.Value.size() > 40'000'000) {
-                    break;
-                }
                 requests.emplace_back(std::move(req->Get()->Request));
                 Requests[Cookie++] = std::move(req->Sender);
                 StoredRequests.pop();
