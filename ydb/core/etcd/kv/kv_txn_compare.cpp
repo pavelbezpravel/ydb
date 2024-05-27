@@ -24,7 +24,12 @@ public:
     void OnRunQuery() override {
         if (Request.empty()) {
             Response.Succeeded = true;
-            Finish();
+            DeleteSession = false;
+            if (CommitTx && RequestSizes[!Response.Succeeded] == 0) {
+                CommitTransaction();
+            } else {
+                Finish();
+            }
             return;
         }
 
@@ -132,7 +137,7 @@ private:
     bool CommitTx;
     std::array<size_t, 2> RequestSizes;
     TVector<TTxnCompareRequest> Request;
-    TTxnCompareResponse Response;
+    TTxnCompareResponse Response{};
 };
 
 } // anonymous namespace

@@ -24,27 +24,40 @@ public:
     }
 
     void OnRunQuery() override {
-        auto compareCond = Compare(Request.Key, Request.RangeEnd);
+        auto [compareCond, useRangeEnd] = Compare(Request.Key, Request.RangeEnd);
 
         TStringBuilder query;
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $revision AS Int64;
-            DECLARE $key AS String;
-            DECLARE $range_end AS String;
+            DECLARE $key AS String;)");
+        if (useRangeEnd) {
+            query << R"(
+            DECLARE $range_end AS String;)";
+        }
+        query << Sprintf(R"(
 
             $prev_kv = (
                 SELECT *
                     FROM kv
                     WHERE %s
-                        AND delete_revision IS NULL
             );
             UPSERT
-                INTO kv (key, mod_revision, delete_revision)
-                SELECT key, mod_revision, $revision
-                    FROM $prev_kv;)",
-            compareCond.c_str()
+                INTO kv_past
+                SELECT
+                        key,
+                        UNWRAP(mod_revision) AS mod_revision,
+                        create_revision,
+                        version,
+                        $revision as delete_revision,
+                        value,
+                    FROM $prev_kv;
+            DELETE
+                FROM kv
+                WHERE %s;)",
+            compareCond.data(),
+            compareCond.data()
         );
 
         if (Request.PrevKV) {
@@ -62,10 +75,13 @@ public:
                 .Build()
             .AddParam("$key")
                 .String(Request.Key)
-                .Build()
-            .AddParam("$range_end")
-                .String(Request.RangeEnd)
                 .Build();
+        if (useRangeEnd) {
+            params
+                .AddParam("$range_end")
+                    .String(Request.RangeEnd)
+                    .Build();
+        }
 
         RunDataQuery(query, &params, TxControl);
     }
@@ -121,7 +137,7 @@ public:
 private:
     bool CommitTx;
     TDeleteRangeRequest Request;
-    TDeleteRangeResponse Response;
+    TDeleteRangeResponse Response{};
 };
 
 } // anonymous namespace

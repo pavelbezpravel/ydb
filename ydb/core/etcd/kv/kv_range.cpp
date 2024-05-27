@@ -24,150 +24,94 @@ public:
 
     void OnRunQuery() override {
         if (Request.Revision != 0 && (CompactRevision > Request.Revision || Request.Revision > Revision)) {
-            CommitTransaction();
+            Finish(Ydb::StatusIds::PRECONDITION_FAILED, NYql::TIssues{});
             return;
         }
 
-        auto compareCond = Compare(Request.Key, Request.RangeEnd);
+        auto [compareCond, useRangeEnd] = Compare(Request.Key, Request.RangeEnd);
 
         TStringBuilder query;
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
 
-            DECLARE $key AS String;
-            DECLARE $range_end AS String;)");
+            DECLARE $key AS String;)");
+        if (useRangeEnd) {
+            query << R"(
+            DECLARE $range_end AS String;)";
+        }
         if (Request.Revision > 0) {
             query << R"(
             DECLARE $revision AS Int64;)";
-        }
-        if (Request.MinCreateRevision > 0) {
-            query << R"(
-            DECLARE $min_create_revision AS Int64;)";
-        }
-        if (Request.MaxCreateRevision > 0) {
-            query << R"(
-            DECLARE $max_create_revision AS Int64;)";
-        }
-        if (Request.MinModRevision > 0) {
-            query << R"(
-            DECLARE $min_mod_revision AS Int64;)";
-        }
-        if (Request.MaxModRevision > 0) {
-            query << R"(
-            DECLARE $max_mod_revision AS Int64;)";
         }
         if (Request.Limit > 0) {
             query << R"(
             DECLARE $limit AS Uint64;)";
         }
-        query << Sprintf(R"(
-
+        query << R"(
+            )";
+        if (Request.Revision > 0) {
+            query << Sprintf(R"(
+            SELECT %s
+                FROM kv_past
+                WHERE %s
+                    AND mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision))",
+                Request.CountOnly ? "COUNT(*) AS count" : Request.Limit > 0 ? "COUNT(*) OVER() AS count, kv_past.*" : "*",
+                compareCond.data()
+            );
+            if (Request.Limit > 0) {
+                query << R"(
+                LIMIT $limit)";
+            }
+            query << ";";
+            query << Sprintf(R"(
             SELECT %s
                 FROM kv
                 WHERE %s
-                    AND %s)",
-            Request.CountOnly ? "COUNT(*) AS count" : Request.Limit > 0 ? "COUNT(*) OVER() AS count, kv.*" : "*",
-            compareCond.c_str(),
-            Request.Revision > 0 ? "mod_revision <= $revision AND (delete_revision IS NULL OR $revision < delete_revision)" : "delete_revision IS NULL"
-        );
-
-        if (Request.MinCreateRevision > 0) {
-            query << R"(
-                    AND $min_create_revision <= create_revision)";
-        }
-        if (Request.MaxCreateRevision > 0) {
-            query << R"(
-                    AND create_revision <= $max_create_revision)";
-        }
-        if (Request.MinModRevision > 0) {
-            query << R"(revision
-                    AND $min_mod_revision <= mod_revision)";
-        }
-        if (Request.MaxCreateRevision > 0) {
-            query << R"(
-                    AND mod_revision <= $max_mod_revision)";
-        }
-        if (Request.SortOrder != TRangeRequest::ESortOrder::NONE) {
-            auto order = [&]() {
-                switch (Request.SortOrder) {
-                    case TRangeRequest::ESortOrder::ASCEND:
-                        return "ASC";
-                    case TRangeRequest::ESortOrder::DESCEND:
-                        return "DESC";
-                    default:
-                        throw std::runtime_error("Unknwon sort order");
-                }
-            }();
-
-            auto target = [&]() {
-                switch (Request.SortTarget) {
-                    case TRangeRequest::ESortTarget::KEY:
-                        return "key";
-                    case TRangeRequest::ESortTarget::CREATE:
-                        return "create_revision";
-                    case TRangeRequest::ESortTarget::MOD:
-                        return "mod_revision";
-                    case TRangeRequest::ESortTarget::VERSION:
-                        return "version";
-                    case TRangeRequest::ESortTarget::VALUE:
-                        return "value";
-                    default:
-                        throw std::runtime_error("Unknwon sort target");
-                }
-            }();
-
-            query << Sprintf(R"(
-                    ORDER BY %s %s)", target, order);
-        }
-        if (Request.Limit > 0) {
-            query << R"(
+                    AND mod_revision <= $revision)",
+                Request.CountOnly ? "COUNT(*) AS count" : Request.Limit > 0 ? "COUNT(*) OVER() AS count, kv.*" : "*",
+                compareCond.data()
+            );
+            if (Request.Limit > 0) {
+                query << R"(
                 LIMIT $limit)";
+            }
+            query << ";";
+        } else {
+            query << Sprintf(R"(
+            SELECT %s
+                FROM kv
+                WHERE %s)",
+                Request.CountOnly ? "COUNT(*) AS count" : Request.Limit > 0 ? "COUNT(*) OVER() AS count, kv.*" : "*",
+                compareCond.data()
+            );
+            if (Request.Limit > 0) {
+                query << R"(
+                LIMIT $limit)";
+            }
+            query << ";";
         }
-
-        query << ";";
 
         NYdb::TParamsBuilder params;
         params
             .AddParam("$key")
                 .String(Request.Key)
-                .Build()
-            .AddParam("$range_end")
-                .String(Request.RangeEnd)
                 .Build();
+        if (useRangeEnd) {
+            params
+                .AddParam("$range_end")
+                    .String(Request.RangeEnd)
+                    .Build();
+        }
         if (Request.Revision > 0) {
             params
                 .AddParam("$revision")
                     .Int64(Request.Revision)
                     .Build();
         }
-        if (Request.MinCreateRevision > 0) {
-            params
-                .AddParam("$min_create_revision")
-                    .Int64(Request.MinCreateRevision)
-                    .Build();
-        }
-        if (Request.MaxCreateRevision > 0) {
-            params
-                .AddParam("$max_create_revision")
-                    .Int64(Request.MaxCreateRevision)
-                    .Build();
-        }
-        if (Request.MinModRevision > 0) {
-            params
-                .AddParam("$min_mod_revision")
-                    .Int64(Request.MinModRevision)
-                    .Build();
-        }
-        if (Request.MaxModRevision > 0) {
-            params
-                .AddParam("$max_mod_revision")
-                    .Int64(Request.MaxModRevision)
-                    .Build();
-        }
         if (Request.Limit > 0) {
             params
                 .AddParam("$limit")
-                    .Uint64(Request.Limit + 1) // to fill TRangeResponse::more field
+                    .Uint64(Request.Limit)
                     .Build();
         }
 
@@ -177,40 +121,93 @@ public:
     void OnQueryResult() override {
         Response.Revision = Revision;
 
-        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
-
-        NYdb::TResultSetParser parser(ResultSets[0]);
+        Y_ABORT_UNLESS(ResultSets.size() == 1 + (Request.Revision > 0), "Unexpected database response");
 
         if (Request.CountOnly) {
-            Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
+            for (const auto& resultSet : ResultSets) {
+                NYdb::TResultSetParser parser(resultSet);
 
-            parser.TryNextRow();
+                Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
 
-            Response.Count = parser.ColumnParser("count").GetUint64();
-            Response.More = false;
-            Response.KVs = {};
-        } else {
-            Response.Count = Request.Limit > 0 ? 0 : parser.RowsCount();
-            auto responseCount = Request.Limit > 0 ? std::min(parser.RowsCount(), Request.Limit) : parser.RowsCount();
-
-            Response.More = parser.RowsCount() > responseCount;
-
-            Response.KVs.reserve(responseCount);
-            while (Response.KVs.size() < responseCount) {
                 parser.TryNextRow();
-                if (Request.Limit > 0) {
-                    Response.Count = parser.ColumnParser("count").GetUint64();
-                }
 
-                TKeyValue kv{
-                    .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
-                    .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
-                    .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
-                    .Version = *parser.ColumnParser("version").GetOptionalInt64(),
-                    .Value = Request.KeysOnly ? "" : std::move(*parser.ColumnParser("value").GetOptionalString()),
-                };
-                Response.KVs.emplace_back(std::move(kv));
+                Response.Count += parser.ColumnParser("count").GetUint64();
             }
+        } else if (Request.Limit > 0) {
+            Response.KVs.reserve(Request.Limit);
+
+            for (const auto& resultSet : ResultSets) {
+                NYdb::TResultSetParser parser(resultSet);
+                
+                auto responseCount = 0;
+                while (parser.TryNextRow() && Response.KVs.size() < Request.Limit) {
+                    responseCount = parser.ColumnParser("count").GetUint64();
+
+                    TKeyValue kv{
+                        .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                        .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
+                        .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                        .Version = *parser.ColumnParser("version").GetOptionalInt64(),
+                        .Value = Request.KeysOnly ? "" : std::move(*parser.ColumnParser("value").GetOptionalString()),
+                    };
+                    Response.KVs.emplace_back(std::move(kv));
+                }
+                Response.Count += responseCount;
+            }
+            Response.More = Response.KVs.size() < Response.Count;
+        } else {
+            for (const auto& resultSet : ResultSets) {
+                NYdb::TResultSetParser parser(resultSet);
+                
+                Response.KVs.reserve(Response.KVs.size() + parser.RowsCount());
+                
+                while (parser.TryNextRow()) {
+                    TKeyValue kv{
+                        .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                        .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
+                        .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
+                        .Version = *parser.ColumnParser("version").GetOptionalInt64(),
+                        .Value = Request.KeysOnly ? "" : std::move(*parser.ColumnParser("value").GetOptionalString()),
+                    };
+                    Response.KVs.emplace_back(std::move(kv));
+                }
+                Response.Count += parser.RowsCount();
+            }
+        }
+        std::ranges::sort(Response.KVs, std::less{}, &TKeyValue::Key);
+        if (Request.SortOrder != TRangeRequest::ESortOrder::NONE) {
+            auto apply_sort = [](TVector<TKeyValue>& r, auto comp, auto proj) {
+                return std::ranges::stable_sort(r, comp, proj);
+            };
+            auto apply_proj = [&](TVector<TKeyValue>& r, auto comp) {
+                auto impl = [&](auto proj) { return apply_sort(r, comp, proj); };
+                switch (Request.SortTarget) {
+                    case TRangeRequest::ESortTarget::KEY:
+                        return impl(&TKeyValue::Key);
+                    case TRangeRequest::ESortTarget::CREATE:
+                        return impl(&TKeyValue::CreateRevision);
+                    case TRangeRequest::ESortTarget::MOD:
+                        return impl(&TKeyValue::ModRevision);
+                    case TRangeRequest::ESortTarget::VERSION:
+                        return impl(&TKeyValue::Version);
+                    case TRangeRequest::ESortTarget::VALUE:
+                        return impl(&TKeyValue::Value);
+                    default:
+                        throw std::runtime_error("Unknown sort target");
+                }
+            };
+            auto apply_comp = [&](TVector<TKeyValue>& r) {
+                auto impl = [&](auto comp) { return apply_proj(r, comp); };
+                switch (Request.SortOrder) {
+                    case TRangeRequest::ESortOrder::ASCEND:
+                        return impl(std::less{});
+                    case TRangeRequest::ESortOrder::DESCEND:
+                        return impl(std::greater{});
+                    default:
+                        throw std::runtime_error("Unknown sort order");
+                }
+            };
+            apply_comp(Response.KVs);
         }
 
         DeleteSession = false;
@@ -238,7 +235,7 @@ public:
 
 private:
     TRangeRequest Request;
-    TRangeResponse Response;
+    TRangeResponse Response{};
 };
 
 } // anonymous namespace

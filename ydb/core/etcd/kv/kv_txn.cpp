@@ -191,7 +191,7 @@ private:
     i64 CompactRevision;
     size_t RequestIndex;
     TTxnRequest Request;
-    TTxnResponse Response;
+    TTxnResponse Response{};
 };
 
 } // anonymous namespace

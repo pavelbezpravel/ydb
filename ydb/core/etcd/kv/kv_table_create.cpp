@@ -29,13 +29,18 @@ public:
     void Bootstrap() {
         Become(&TKVTableCreateActor::CreateTableStateFunc);
 
-        CreateTable();
+        CreateKvTable();
+        CreateKvPastTable();
     }
 
 private:
     STRICT_STFUNC(CreateTableStateFunc, hFunc(NKikimr::TEvTableCreator::TEvCreateTableResponse, Handle))
 
     void Handle(NKikimr::TEvTableCreator::TEvCreateTableResponse::TPtr&) {
+        Y_ABORT_UNLESS(TablesCreating > 0);
+        if (--TablesCreating > 0) {
+            return;
+        }
         Send(Owner, new TEvEtcdKV::TEvCreateTableResponse());
         PassAway();
     }
@@ -51,10 +56,29 @@ private:
         return Col(columnName, NKikimr::NScheme::TypeName(columnType));
     }
 
-    void CreateTable() {
+    void CreateKvTable() {
+        ++TablesCreating;
         Register(
             NKikimr::CreateTableCreator(
                 {".etcd", "kv"},
+                {
+                    Col("key", NKikimr::NScheme::NTypeIds::String),
+                    Col("mod_revision", NKikimr::NScheme::NTypeIds::Int64),
+                    Col("create_revision", NKikimr::NScheme::NTypeIds::Int64),
+                    Col("version", NKikimr::NScheme::NTypeIds::Int64),
+                    Col("value", NKikimr::NScheme::NTypeIds::String),
+                },
+                {"key"},
+                static_cast<NKikimrServices::EServiceKikimr>(LogComponent)
+            )
+        );
+    }
+
+    void CreateKvPastTable() {
+        ++TablesCreating;
+        Register(
+            NKikimr::CreateTableCreator(
+                {".etcd", "kv_past"},
                 {
                     Col("key", NKikimr::NScheme::NTypeIds::String),
                     Col("mod_revision", NKikimr::NScheme::NTypeIds::Int64),
@@ -73,6 +97,7 @@ private:
     ui64 LogComponent;
     TString Path;
     NActors::TActorId Owner;
+    size_t TablesCreating = 0;
 };
 
 } // anonymous namespace

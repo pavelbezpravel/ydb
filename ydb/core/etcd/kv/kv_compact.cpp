@@ -25,7 +25,7 @@ public:
 
     void OnRunQuery() override {
         if (Request.Revision != 0 && (CompactRevision > Request.Revision || Request.Revision > Revision)) {
-            CommitTransaction();
+            Finish(Ydb::StatusIds::PRECONDITION_FAILED, NYql::TIssues{});
             return;
         }
 
@@ -36,7 +36,7 @@ public:
             DECLARE $revision AS Int64;
 
             DELETE
-                FROM kv
+                FROM kv_past
                 WHERE delete_revision <= $revision;)"
         );
 
@@ -79,7 +79,7 @@ public:
 
 private:
     TCompactionRequest Request;
-    TCompactionResponse Response;
+    TCompactionResponse Response{};
 };
 
 } // anonymous namespace

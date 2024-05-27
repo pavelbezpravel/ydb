@@ -52,15 +52,15 @@ public:
         return TString{kEmptyKey};
     }
 
-    [[nodiscard]] static inline TString Compare(const TString& key, const TString& rangeEnd) noexcept {
+    [[nodiscard]] static inline std::pair<TStringBuf, bool> Compare(const TString& key, const TString& rangeEnd) noexcept {
         if (rangeEnd.empty()) {
-            return "key == $key";
+            return {"key == $key", false};
         } else if (rangeEnd == kEmptyKey) {
-            return "key >= $key";
+            return {"key >= $key", false};
         } else if (rangeEnd == GetPrefix(key)) {
-            return "StartsWith(key, $key)";
+            return {"StartsWith(key, $key)", false};
         } else {
-            return "key BETWEEN $key AND $range_end";
+            return {"key BETWEEN $key AND $range_end", true};
         }
     }
 

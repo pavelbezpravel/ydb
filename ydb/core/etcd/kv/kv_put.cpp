@@ -24,74 +24,107 @@ public:
     }
 
     void OnRunQuery() override {
+        if (!Request.IgnoreValue) {
+            OnRunPutQuery();
+            return;
+        }
+
+        TString query = R"(
+            PRAGMA TablePathPrefix("/Root/.etcd");
+
+            DECLARE $key AS String;
+
+            SELECT
+                    value
+                FROM kv
+                WHERE key == $key;)";
+
+        NYdb::TParamsBuilder params;
+        params
+            .AddParam("$key")
+                .String(Request.Key)
+                .Build();
+
+        RunDataQuery(query, &params, TxControl);
+    }
+
+    void OnQueryResult() override {
+        Y_ABORT_UNLESS(ResultSets.size() == 1, "Unexpected database response");
+
+        NYdb::TResultSetParser parser(ResultSets[0]);
+
+        if (parser.RowsCount() < 1) {
+            Finish(Ydb::StatusIds::PRECONDITION_FAILED, NYql::TIssues{});
+            return;
+        }
+
+        Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 1 row in database response");
+
+        parser.TryNextRow();
+
+        Request.Value = std::move(*parser.ColumnParser("value").GetOptionalString());
+
+        OnRunPutQuery();
+    }
+
+    void OnRunPutQuery() {
         TStringBuilder query;
         query << Sprintf(R"(
             PRAGMA TablePathPrefix("/Root/.etcd");
 
             DECLARE $revision AS Int64;
-            DECLARE $new_kv AS List<Struct<
-                key: String,
-                new_value: String
-            >>;
+            DECLARE $key AS String;
+            DECLARE $new_value AS String;
 
             $prev_kv = (
                 SELECT *
                     FROM kv
-                    WHERE delete_revision IS NULL
-            );
-            $next_kv = (
-                SELECT *
-                    FROM AS_TABLE($new_kv) AS next
-                    LEFT JOIN $prev_kv     AS prev USING(key)
+                    WHERE key == $key
             );
             UPSERT
-                INTO kv
+                INTO kv_past
                 SELECT
                         key,
                         UNWRAP(mod_revision) AS mod_revision,
-                        $revision AS delete_revision,
-                    FROM $next_kv
-                    WHERE mod_revision IS NOT NULL;
+                        create_revision,
+                        version,
+                        $revision as delete_revision,
+                        value,
+                    FROM $prev_kv;
+            UPSERT
+                INTO kv (key, mod_revision, create_revision, version, value) VALUES
+                ($key, $revision, $revision, 1, $new_value);
             UPSERT
                 INTO kv
                 SELECT
                         key,
-                        $revision AS mod_revision,
-                        COALESCE(create_revision, $revision) AS create_revision,
-                        COALESCE(version, 0) + 1 AS version,
-                        NULL AS delete_revision,
-                        %s AS value,
-                    FROM $next_kv;)",
-            Request.IgnoreValue ? R"(ENSURE(value, value IS NOT NULL, "value for key '" || key || "' is absent"))" : "new_value"
+                        create_revision,
+                        version + 1 AS version,
+                    FROM $prev_kv;)"
         );
 
         if (Request.PrevKV) {
             query << R"(
-            SELECT * FROM $next_kv;)";
+            SELECT * FROM $prev_kv;)";
         }
 
         NYdb::TParamsBuilder params;
         params
             .AddParam("$revision")
                 .Int64(Revision + 1)
+                .Build()
+            .AddParam("$key")
+                .String(Request.Key)
+                .Build()
+            .AddParam("$new_value")
+                .String(Request.Value)
                 .Build();
 
-        auto& newKVParam = params.AddParam("$new_kv");
-        newKVParam.BeginList();
-        newKVParam.AddListItem()
-            .BeginStruct()
-            .AddMember("key")
-                .String(Request.Key)
-            .AddMember("new_value")
-                .String(Request.Value)
-            .EndStruct();
-        newKVParam.EndList();
-        newKVParam.Build();
-
+        SetQueryResultHandler(&TKVPutActor::OnPutQueryResult);
         RunDataQuery(query, &params, TxControl);
     }
 
-    void OnQueryResult() override {
+    void OnPutQueryResult() {
         Response.Revision = Revision;
 
         if (Request.PrevKV) {
@@ -99,15 +132,12 @@ public:
 
             NYdb::TResultSetParser parser(ResultSets[0]);
 
-            Y_ABORT_UNLESS(parser.RowsCount() == 1, "Expected 0 or 1 row in database response");
+            Y_ABORT_UNLESS(parser.RowsCount() <= 1, "Expected 0 or 1 row in database response");
 
-            parser.TryNextRow();
-
-            auto mod_revision = parser.ColumnParser("mod_revision").GetOptionalInt64();
-            if (mod_revision) {
+            while (parser.TryNextRow()) {
                 Response.PrevKV = {
-                    .Key = std::move(parser.ColumnParser("key").GetString()),
-                    .ModRevision = *mod_revision,
+                    .Key = std::move(*parser.ColumnParser("key").GetOptionalString()),
+                    .ModRevision = *parser.ColumnParser("mod_revision").GetOptionalInt64(),
                     .CreateRevision = *parser.ColumnParser("create_revision").GetOptionalInt64(),
                     .Version = *parser.ColumnParser("version").GetOptionalInt64(),
                     .Value = std::move(*parser.ColumnParser("value").GetOptionalString()),
@@ -136,7 +166,7 @@ public:
 
 private:
     TPutRequest Request;
-    TPutResponse Response;
+    TPutResponse Response{};
 };
 
 } // anonymous namespace
